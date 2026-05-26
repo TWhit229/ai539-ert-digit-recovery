@@ -110,3 +110,21 @@ end
 sgtitle(sprintf('Template-match + refine on 10 unseen digits:  %d/10 correct', ncorrect), 'FontSize', 13);
 saveas(fig, fullfile('..','figures','validation_0to9.png'));
 fprintf('Saved figures/validation_0to9.png\n');
+
+%% slide-friendly figure: ONE row, each cell = unseen digit image with
+%% a big bold "true -> recovered" label above (green = correct, red = wrong).
+%% Tight tiledlayout, no inner title (the slide title carries the headline).
+figS = figure('Position',[40 40 1700 620],'Color','w','Visible','off');
+colormap(gray);
+tl = tiledlayout(1,10,'TileSpacing','compact','Padding','tight');
+for k = 1:10
+    nexttile;
+    imagesc(reshape(sigmaBackground + trueImgs(:,k), [28 28]));
+    axis image; caxis([1 2]); set(gca,'XTick',[],'YTick',[]);
+    correct = recClass(k) == (k-1);
+    c = [0 0.55 0]; if ~correct, c = [0.85 0 0]; end
+    title(sprintf('%d \\rightarrow %d', k-1, recClass(k)), ...
+          'FontSize', 32, 'FontWeight','bold', 'Color', c, 'Interpreter','tex');
+end
+exportgraphics(figS, fullfile('..','figures','validation_slide.png'), 'Resolution', 200);
+fprintf('Saved figures/validation_slide.png\n');

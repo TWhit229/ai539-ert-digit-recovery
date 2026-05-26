@@ -206,19 +206,16 @@ baseline.
 \end{frame}
 
 %-------------------------------------------------------------
-\begin{frame}{Backup: does the method generalize?}
+\begin{frame}{Same method on 10 unseen digits: 9 of 10 correct}
 \centering
-\includegraphics[width=0.96\linewidth]{validation_0to9.png}
+\includegraphics[width=0.95\linewidth]{validation_slide.png}
 
-\vspace{0.5em}
-\raggedright
-\footnotesize
-Same method, ten \textbf{unseen} test digits (one of each, none in our
-dictionary): \textbf{9 of 10 recovered correctly}. Rows are the true digit, the
-Stage 1 match (green means correct class), and the refined result. The one miss
-is an unseen 5 read as a 6, and it was the least confident case: that handwritten
-5 has a looped bottom that resembles a 6. On the competition data the top eight
-matches were almost all 5's, so that identity is not a close call.
+\vspace{0.6em}
+\small
+Labels read \textbf{true $\rightarrow$ recovered}. The one miss (5 $\rightarrow$
+6) is a handwritten 5 with a looped bottom that resembles a 6, and it was the
+least confident match. The competition data is not a close call: the top eight
+matches were almost all 5's.
 \end{frame}
 
 \end{document}
