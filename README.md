@@ -11,14 +11,17 @@ Authors: Travis Whitney, Cole Seifert, Alexander Nutt (AI 539, Oregon State).
 Project1_Submission/
 ├── Project1_Lesson.pdf          # FULL written lesson: theory + math, plain English
 ├── Project1_CompetitionTalk.pdf # the ~7-minute presentation (OSU theme)
-├── competition_answer.mat       # THE ANSWER: digit=5, sigma_answer (28x28), etc.
+├── rotated_answer.mat           # THE ANSWER: digit=5, rotated 7.5deg, misfit 1.01e-7
+├── competition_answer.mat       # upright-only baseline (digit=5, misfit 1.76e-6)
 ├── Project1_Lesson.tex          # source for the lesson
 ├── Project1_CompetitionTalk.tex # source for the talk
 ├── make_teaching_figs.py        # regenerates the teaching diagrams
 ├── README.md
 ├── figures/                     # all figures used in the PDFs
 └── code/                        # everything needed to run it
-    ├── solve_competition.m      # MAIN: template-match + refine -> the answer
+    ├── solve_competition.m      # upright template-match + refine
+    ├── find_rotation.m          # MAIN: rotation-aware template-match + refine
+    ├── myrotate.m               # no-toolbox bilinear rotation helper
     ├── validate_0to9.m          # held-out test: recover 10 unseen digits (9/10)
     ├── ERT2D.m                  # forward model (PDE solver + adjoint Jacobian)
     ├── paramPackGenerator.m     # builds the ERT parameter pack
@@ -46,22 +49,54 @@ In MATLAB, from the `code/` folder.
    exact digit. ~1 min.
 4. Saves `competition_answer.mat` and `competition_answer.png`.
 
-Result on the professor's vector: **digit 5**, refined misfit `1.76e-6`
-(top-8 candidates: seven 5's and one 8).
+Result on the professor's vector: **digit 5**, upright refined misfit `1.76e-6`
+(top-8 candidates: seven 5's and one 8). The professor later said the image was
+rotated; running `find_rotation.m` then drops misfit to **1.006e-7** at **7.5°**
+(see below).
 
-## The answer file: `competition_answer.mat`
+**Rotation-aware solver (the real answer):**
 
-The recovered conductivity image is saved at the submission root in
-`competition_answer.mat`. Load it in MATLAB with `load('competition_answer.mat')`;
-it contains:
+```matlab
+>> find_rotation
+```
+
+1. Phase 0/1/2: scan rotations of MNIST templates against `y_obs` to find the
+   angle (~5 min total).
+2. Phase 3: full 60k Stage-1 at the recovered angle (~8 min).
+3. Phase 4: Stage-2 gradient-descent refinement from the rotated winner.
+
+Result on the professor's vector: **digit 5 rotated 7.5°**, refined misfit
+**1.006e-7** (~17x lower than the upright-only solver).
+
+## The answer files
+
+Two answer files live at the submission root.
+
+### `rotated_answer.mat` (the real answer)
+
+Produced by `find_rotation.m`. Variables:
+
+| variable           | type    | meaning                                                              |
+|--------------------|---------|----------------------------------------------------------------------|
+| `digit_rot`        | scalar  | recovered digit class: **5**                                         |
+| `theta_final`      | scalar  | recovered rotation angle: **7.5°** (CCW)                             |
+| `final_misfit_rot` | scalar  | refined misfit: **1.006e-7**                                         |
+| `sigma_answer_rot` | 28x28   | the recovered conductivity image (digit rotated 7.5°)                |
+| `best_idx_rot`     | scalar  | winning template index in the MNIST training set: **55756**          |
+| `x_template_rot`   | 784x1   | the rotated template pixels                                          |
+
+### `competition_answer.mat` (upright baseline)
+
+Produced by `solve_competition.m` before we knew about the rotation. Variables:
 
 | variable        | type        | meaning                                                              |
 |-----------------|-------------|----------------------------------------------------------------------|
 | `digit`         | scalar      | recovered digit class: **5**                                         |
-| `final_misfit`  | scalar      | `1/2 ||F(sigma) - y_obs||^2` after refinement: **1.7627e-6**         |
-| `sigma_answer`  | 28x28       | the recovered conductivity image (background 1, digit ~2)            |
-| `x_template`    | 784x1       | the winning MNIST training image (pixels of the Stage-1 winner)      |
-| `best_idx`      | scalar      | its index in the MNIST training set: **51138**                       |
+| `final_misfit`  | scalar      | refined misfit: **1.7627e-6** (a "false friend" — same digit class   |
+|                 |             | as the truth but not the exact image, because the truth is rotated)  |
+| `sigma_answer`  | 28x28       | upright recovered conductivity image                                 |
+| `x_template`    | 784x1       | upright Stage-1 winner                                               |
+| `best_idx`      | scalar      | its index: **51138**                                                 |
 
 **The generalization test (optional):**
 
