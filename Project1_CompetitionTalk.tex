@@ -166,6 +166,33 @@ sharpen the exact shape. Safe now, since Stage 1 found the right digit.
 \end{frame}
 
 %-------------------------------------------------------------
+\begin{frame}{The method, in math}
+\small
+Let $\mathcal{D} = \{m_1, \ldots, m_N\}$ be the $N = 60{,}000$ MNIST training
+images, $\sigma_b = 1$ the background, $F$ the ERT forward map, and
+$y_{\text{obs}}$ the measurements. Define the data misfit
+\[
+L(x) \;=\; \tfrac{1}{2}\, \bigl\| F(\sigma_b\,\mathbf{1} + x) - y_{\text{obs}} \bigr\|_2^2 .
+\]
+
+\textbf{Stage 1 (template matching).}
+\[
+i^{\star} \;=\; \arg\min_{i \in \{1, \ldots, N\}} L(m_i), \qquad x^{(0)} \;=\; m_{i^{\star}} .
+\]
+
+\textbf{Stage 2 (warm-started refinement).} With $\theta^{(0)} = \mathbf{0}$, for $k = 0, 1, \ldots, K-1$:
+\begin{align*}
+r^{(k)}        \;&=\; F(\sigma_b\,\mathbf{1} + x^{(k)}) - y_{\text{obs}}, \\
+\theta^{(k+1)} \;&=\; \gamma\,\theta^{(k)} + \eta\, J(x^{(k)})^{\top}\, r^{(k)}, \\
+x^{(k+1)}      \;&=\; \max\bigl(x^{(k)} - \theta^{(k+1)},\; -\sigma_b + \varepsilon\bigr).
+\end{align*}
+Return $\hat{\sigma} = \sigma_b\,\mathbf{1} + x^{(K)}$.
+
+\vspace{0.3em}
+{\footnotesize\textcolor{osugray}{No explicit regularizer in $L$. The prior is the discrete dictionary $\mathcal{D}$ itself.}}
+\end{frame}
+
+%-------------------------------------------------------------
 \begin{frame}{What we recovered}
 \begin{columns}[T]
 \column{0.5\textwidth}

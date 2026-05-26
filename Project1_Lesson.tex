@@ -1135,6 +1135,53 @@ everything we can't get stuck on the wrong digit. Then we polish the winner
 with a little downhill tuning. Clean, correct digit --- done.''
 \end{intuition}
 
+\paragraph{The method, in formal math.}
+Let the dictionary $\mathcal{D} = \{m_1, m_2, \ldots, m_N\} \subset \mathbb{R}^n$
+be the $N = 60{,}000$ MNIST training images (each $m_i$ is a vector of
+$n = 784$ pixel values in $[0,1]$). Let $\sigma_b = 1$ be the background
+conductivity, $F : \mathbb{R}^n \to \mathbb{R}^m$ the ERT forward map (with
+$m = 1900$ boundary readings), $J(x) = \partial F / \partial x \in
+\mathbb{R}^{m \times n}$ its Jacobian, and $y_{\text{obs}} \in \mathbb{R}^m$
+the measured data. Define the data misfit
+\[
+L(x) \;=\; \tfrac{1}{2}\, \bigl\| F(\sigma_b\,\mathbf{1} + x) - y_{\text{obs}} \bigr\|_2^2 .
+\]
+
+\smallskip
+\noindent\textbf{Stage 1 (template matching --- MAP under the empirical prior on $\mathcal{D}$).}
+\[
+i^{\star} \;=\; \operatorname*{arg\,min}_{i \in \{1, \ldots, N\}} \, L(m_i),
+\qquad x^{(0)} \;=\; m_{i^{\star}} .
+\]
+
+\smallskip
+\noindent\textbf{Stage 2 (projected gradient descent with heavy-ball momentum, started at $x^{(0)}$).}
+With $\theta^{(0)} = \mathbf{0}$, for $k = 0, 1, \ldots, K-1$:
+\begin{align*}
+r^{(k)}         \;&=\; F(\sigma_b\,\mathbf{1} + x^{(k)}) - y_{\text{obs}}, \\
+\theta^{(k+1)}  \;&=\; \gamma\,\theta^{(k)} + \eta\, J(x^{(k)})^{\top}\, r^{(k)}, \\
+x^{(k+1)}       \;&=\; \Pi_{\mathcal{C}}\!\bigl( x^{(k)} - \theta^{(k+1)} \bigr),
+\end{align*}
+where $\mathcal{C} = \{x \in \mathbb{R}^n : x \geq -\sigma_b + \varepsilon\,\mathbf{1}\}$
+enforces $\sigma > 0$ and $\Pi_{\mathcal{C}}$ is elementwise $\max$. Return
+\[
+\hat{\sigma} \;=\; \sigma_b\,\mathbf{1} + x^{(K)} .
+\]
+
+\smallskip
+\noindent\textbf{Hyperparameters used.} $\sigma_b = 1$, $\eta = 5$,
+$\gamma = 0.95$, $K = 1500$, $\varepsilon = 10^{-6}$.
+
+\smallskip
+\noindent\textbf{Reading this back.} Stage 1 minimizes $L$ over the
+\emph{discrete} set $\mathcal{D}$; this is the prior, baked into the search
+space. Equivalently, $i^{\star}$ is the MAP estimate under the empirical prior
+that places equal probability on each $m_i$ and zero everywhere else. Stage 2
+then minimizes the \emph{same} data misfit $L$, but over the continuous box
+$\mathcal{C}$, started from $m_{i^{\star}}$. Crucially, $L$ contains
+\emph{no explicit regularizer} $\lambda\,R(\sigma)$: all of the regularization
+lives in where Stage 1 places us before Stage 2 begins.
+
 \section{Lesson 28: Does it actually work? A 10-digit stress test}
 
 It is fair to ask whether we simply got lucky on one digit. To check, we ran the
