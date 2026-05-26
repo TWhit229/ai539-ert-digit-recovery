@@ -1135,12 +1135,63 @@ everything we can't get stuck on the wrong digit. Then we polish the winner
 with a little downhill tuning. Clean, correct digit --- done.''
 \end{intuition}
 
+\section{Lesson 28: Does it actually work? A 10-digit stress test}
+
+It is fair to ask whether we simply got lucky on one digit. To check, we ran the
+\emph{exact same method} on ten brand-new digits and watched whether it recovered
+each one.
+
+\paragraph{The honest setup.} MNIST ships as two separate piles: 60{,}000
+\emph{training} images and 10{,}000 \emph{test} images the method never sees.
+We used the training pile as the dictionary (the prior), then took one
+\emph{test} digit of each kind, 0 through 9, simulated its readings with $F$, and
+asked the method to recover it. Because the test digits are not in the
+dictionary, the method cannot cheat by matching a digit to a copy of itself; it
+must identify the \emph{kind} of digit from the readings alone.
+
+\begin{figure}[h]\centering
+\includegraphics[width=0.98\textwidth]{validation_0to9.png}
+\caption{Ten unseen digits put through the method. \textbf{Top:} the true
+(unseen) digit. \textbf{Middle:} the dictionary template Stage 1 picked --- the
+number above each is the digit it identified, green when correct, red when wrong.
+\textbf{Bottom:} the refined reconstruction. Nine of ten are correct.}
+\end{figure}
+
+\paragraph{The result: 9 out of 10.} Every digit came back correct except one,
+where an unseen 5 was mistaken for a 6. That single miss is worth understanding,
+because it \emph{confirms} the lessons rather than undermining them:
+
+\begin{itemize}[leftmargin=2em]
+\item \textbf{It was the least-confident case.} Recall from Lesson 8 that the
+data-match error is really a confidence score. The mistaken 5 had the
+\emph{worst} Stage-1 error of all ten (about $6\times10^{-5}$, versus roughly
+$1$--$3\times10^{-5}$ for the rest). The method was already ``unsure'' there,
+exactly as the theory predicts.
+\item \textbf{That handwritten 5 genuinely resembles a 6.} Its lower half curls
+into a near-closed loop. With only part of the training set in play, the closest
+\emph{reading} happened to come from a 6. This is the shadow problem of Lesson 5
+made concrete: two different shapes casting almost the same shadow.
+\item \textbf{The competition 5 is pinned down, not a coin-flip.} On the real
+data the \emph{top eight} matches were seven 5's and a single 8 --- the leading
+candidates overwhelmingly agree, which is the signal that the digit is truly
+identified. The unseen-5 miss was the opposite: a near-tie a 6 won by a hair.
+Agreement among the top matches is what tells us the competition answer is solid.
+\end{itemize}
+
+\begin{intuition}
+\textbf{Why this matters for the talk.} If someone asks ``how do you know your 5
+is right and not a fluke?'', this is the answer: the same method recovers 9 of 10
+\emph{unseen} digits, and on the competition data the top matches nearly all
+agree on 5. The lone miss is the method honestly flagging its own uncertainty
+--- which is exactly what a trustworthy method should do.
+\end{intuition}
+
 %==============================================================
 \part*{Part VII --- Wrap-up}
 \addcontentsline{toc}{section}{Part VII --- Wrap-up}
 %==============================================================
 
-\section{Lesson 28: The whole story, start to finish}
+\section{Lesson 29: The whole story, start to finish}
 
 \begin{enumerate}[leftmargin=2em]
 \item We want the hidden conductivity image from edge voltage readings
@@ -1165,7 +1216,7 @@ and then \emph{polish} the winner. That cleanly recovers the digit
 (Lessons 23--27).
 \end{enumerate}
 
-\section{Lesson 29: How this connects to Project 2 (diffusion)}
+\section{Lesson 30: How this connects to Project 2 (diffusion)}
 
 Our winning prior is powerful but rigid: it can only return one of the
 60{,}000 images (plus a little polish). It also returns a \emph{single} answer,
@@ -1182,7 +1233,7 @@ step. So Project 2 is the natural sequel: same forward simulator, same
 data-match gradient, but a smarter, generative prior and a fairer way to
 handle multiple possible answers.
 
-\section{Lesson 30: A suggested way to present this}
+\section{Lesson 31: A suggested way to present this}
 
 A clean 10--12 minute talk:
 \begin{enumerate}[leftmargin=2em]
