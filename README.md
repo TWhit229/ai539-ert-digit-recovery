@@ -11,6 +11,7 @@ Authors: Travis Whitney, Cole Seifert, Alexander Nutt (AI 539, Oregon State).
 Project1_Submission/
 ├── Project1_Lesson.pdf          # FULL written lesson: theory + math, plain English
 ├── Project1_CompetitionTalk.pdf # the ~7-minute presentation (OSU theme)
+├── competition_answer.mat       # THE ANSWER: digit=5, sigma_answer (28x28), etc.
 ├── Project1_Lesson.tex          # source for the lesson
 ├── Project1_CompetitionTalk.tex # source for the talk
 ├── make_teaching_figs.py        # regenerates the teaching diagrams
@@ -47,6 +48,20 @@ In MATLAB, from the `code/` folder.
 
 Result on the professor's vector: **digit 5**, refined misfit `1.76e-6`
 (top-8 candidates: seven 5's and one 8).
+
+## The answer file: `competition_answer.mat`
+
+The recovered conductivity image is saved at the submission root in
+`competition_answer.mat`. Load it in MATLAB with `load('competition_answer.mat')`;
+it contains:
+
+| variable        | type        | meaning                                                              |
+|-----------------|-------------|----------------------------------------------------------------------|
+| `digit`         | scalar      | recovered digit class: **5**                                         |
+| `final_misfit`  | scalar      | `1/2 ||F(sigma) - y_obs||^2` after refinement: **1.7627e-6**         |
+| `sigma_answer`  | 28x28       | the recovered conductivity image (background 1, digit ~2)            |
+| `x_template`    | 784x1       | the winning MNIST training image (pixels of the Stage-1 winner)      |
+| `best_idx`      | scalar      | its index in the MNIST training set: **51138**                       |
 
 **The generalization test (optional):**
 
