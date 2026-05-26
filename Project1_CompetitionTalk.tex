@@ -167,29 +167,38 @@ sharpen the exact shape. Safe now, since Stage 1 found the right digit.
 
 %-------------------------------------------------------------
 \begin{frame}{The method, in math}
-\small
-Let $\mathcal{D} = \{m_1, \ldots, m_N\}$ be the $N = 60{,}000$ MNIST training
-images, $\sigma_b = 1$ the background, $F$ the ERT forward map, and
-$y_{\text{obs}}$ the measurements. Define the data misfit
-\[
-L(x) \;=\; \tfrac{1}{2}\, \bigl\| F(\sigma_b\,\mathbf{1} + x) - y_{\text{obs}} \bigr\|_2^2 .
-\]
+\footnotesize
+$\mathcal{D} = \{m_1, \ldots, m_N\}$: the $N = 60{,}000$ MNIST training images.
+$\sigma_b = 1$: background. $F$: ERT forward map. $y_{\text{obs}}$: measurements.
+
+\smallskip
+\begin{align*}
+L(x) \;&=\; \tfrac{1}{2}\, \bigl\| F(\sigma_b\,\mathbf{1} + x) - y_{\text{obs}} \bigr\|_2^2
+       & &\textcolor{osuorange}{\leftarrow\ \text{misfit: how wrong are the readings?}}
+\end{align*}
 
 \textbf{Stage 1 (template matching).}
-\[
-i^{\star} \;=\; \arg\min_{i \in \{1, \ldots, N\}} L(m_i), \qquad x^{(0)} \;=\; m_{i^{\star}} .
-\]
-
-\textbf{Stage 2 (warm-started refinement).} With $\theta^{(0)} = \mathbf{0}$, for $k = 0, 1, \ldots, K-1$:
 \begin{align*}
-r^{(k)}        \;&=\; F(\sigma_b\,\mathbf{1} + x^{(k)}) - y_{\text{obs}}, \\
-\theta^{(k+1)} \;&=\; \gamma\,\theta^{(k)} + \eta\, J(x^{(k)})^{\top}\, r^{(k)}, \\
-x^{(k+1)}      \;&=\; \max\bigl(x^{(k)} - \theta^{(k+1)},\; -\sigma_b + \varepsilon\bigr).
+i^{\star} \;&=\; \arg\min_{i \in \{1, \ldots, N\}} L(m_i)
+       & &\textcolor{osuorange}{\leftarrow\ \text{index of the best of all 60{,}000 templates}} \\
+x^{(0)} \;&=\; m_{i^{\star}}
+       & &\textcolor{osuorange}{\leftarrow\ \text{starting image for Stage 2}}
 \end{align*}
-Return $\hat{\sigma} = \sigma_b\,\mathbf{1} + x^{(K)}$.
 
-\vspace{0.3em}
-{\footnotesize\textcolor{osugray}{No explicit regularizer in $L$. The prior is the discrete dictionary $\mathcal{D}$ itself.}}
+\textbf{Stage 2.} With $\theta^{(0)} = \mathbf{0}$, for $k = 0, 1, \ldots, K-1$:
+\begin{align*}
+r^{(k)} \;&=\; F(\sigma_b\,\mathbf{1} + x^{(k)}) - y_{\text{obs}}
+       & &\textcolor{osuorange}{\leftarrow\ \text{residual at step } k} \\[0.4em]
+\theta^{(k+1)} \;&=\; \underbrace{\gamma\,\theta^{(k)}}_{\textcolor{osuorange}{\text{momentum (keep 95\% of last)}}}
+                    + \underbrace{\eta\, J(x^{(k)})^{\top}\, r^{(k)}}_{\textcolor{osuorange}{\text{gradient step}}}
+       & &\textcolor{osuorange}{\leftarrow\ \text{new velocity}} \\[0.4em]
+x^{(k+1)} \;&=\; \max\bigl(x^{(k)} - \theta^{(k+1)},\; -\sigma_b + \varepsilon\bigr)
+       & &\textcolor{osuorange}{\leftarrow\ \text{nudge image, clamp so } \sigma > 0}
+\end{align*}
+
+\smallskip
+$\textbf{Return } \hat{\sigma} = \sigma_b\,\mathbf{1} + x^{(K)}$
+\hspace{0.6em}\textcolor{osuorange}{$\leftarrow$ final conductivity image (background + final pixels).}
 \end{frame}
 
 %-------------------------------------------------------------
