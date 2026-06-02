@@ -1,0 +1,13 @@
+# Python dependencies for the sweep. Install with:
+#   pip install -r requirements.txt
+#
+# For the 5090, install CUDA PyTorch *first* from the official index:
+#   pip install --index-url https://download.pytorch.org/whl/cu124 torch
+# then this requirements file for the rest.
+diffusers>=0.27
+transformers>=4.40
+accelerate>=0.30
+scipy>=1.11
+numpy>=1.26
+matplotlib>=3.8
+Pillow>=10
