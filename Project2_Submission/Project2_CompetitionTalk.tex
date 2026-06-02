@@ -5,7 +5,8 @@
 \usepackage{graphicx}
 \usepackage{tikz}
 \usetikzlibrary{positioning,arrows.meta,decorations.pathmorphing}
-\graphicspath{{figures/}{figures/lesson/}}
+\usepackage{animate}
+\graphicspath{{figures/}{figures/lesson/}{figures/gifs/}}
 \newcommand{\norm}[1]{\lVert #1 \rVert}
 
 \definecolor{osuorange}{HTML}{DC4405}
@@ -232,33 +233,74 @@ alternations per chain, 32 chains in parallel.
 \end{frame}
 
 %==============================================================
-\begin{frame}{Why the data step works this time}
+\begin{frame}{What the data step actually minimizes}
 \footnotesize
-The data step picks the $z$ that fits the measurements while staying
-near the current $x$. DPS just takes a gradient step in this objective.
-We instead take one Gauss-Newton step, the textbook move for nonlinear
-least-squares.
-
-\vspace{0.5em}
-Gauss-Newton approximates the forward map by its tangent plane at the
-current point. That makes the data-fit objective quadratic, with a
-closed-form minimum. We solve one small linear system and jump straight
-to that minimum:
+The data step picks the $z$ that does two things at once: fits the
+measurements, and stays close to the current $x$. Written as an
+objective:
 \[
-\Bigl(\tfrac{1}{\sigma_{\text{meas}}^{2}}\,J^{\top} J + \tfrac{1}{\sigma_n^{2}}\,I\Bigr)\,\Delta
-\;=\; -\tfrac{1}{\sigma_{\text{meas}}^{2}}\,J^{\top} r + \tfrac{1}{\sigma_n^{2}}\,(x - z),
-\quad z \leftarrow z + \Delta.
+\mathcal{L}(z)
+\;=\;
+\underbrace{\tfrac{1}{2\sigma_{\text{meas}}^2}\,\norm{y_{\text{obs}} - F(\sigma_{\text{bg}} + z)}^2}_{\textcolor{osuorange}{\text{data misfit}}}
+\;\;+\;\;
+\underbrace{\tfrac{1}{2\sigma_n^2}\,\norm{z - x}^2}_{\textcolor{osuorange}{\text{coupling penalty}}}.
 \]
-\vspace{-0.4em}
+\vspace{-0.3em}
 
-\textbf{Difference from DPS.} DPS takes one small step in the gradient
-direction. Gauss-Newton solves the local data-fit problem outright. On
-an ill-conditioned Jacobian like ours, one Gauss-Newton step does the
-work of dozens of gradient steps.
+\textbf{Piece by piece.}
+\begin{itemize}\itemsep=2pt
+\item $y_{\text{obs}}$ is the 1900 measured voltages.
+$F(\sigma_{\text{bg}} + z)$ is what the simulator would predict for our
+candidate. The squared norm is the sum of per-electrode errors.
+\item $\sigma_{\text{meas}}$ is how noisy we think the measurements
+are. Smaller $\sigma_{\text{meas}}$ means we trust them more, so the
+first term gets a bigger weight.
+\item $\norm{z - x}^2$ pulls $z$ back toward the current $x$. The
+weight $1/\sigma_n^2$ depends on the slack: tight slack means strong
+pull.
+\end{itemize}
 
-\vspace{0.3em}
+\textbf{Reading it.} ``Find a $z$ that explains the measurements, but
+do not stray too far from the current digit guess.'' At the start of
+the chain $\sigma_n$ is big (loose leash), so the data wins. As the
+schedule anneals, $\sigma_n$ shrinks and the coupling wins, forcing
+$z$ and $x$ to agree.
+\end{frame}
+
+%==============================================================
+\begin{frame}{How we solve it: one Gauss-Newton step}
+\footnotesize
+DPS takes a small step in the gradient direction. We instead linearize
+$F$ around the current $z$, plug the linearization into $\mathcal{L}$,
+and minimize the resulting quadratic. The minimum is the solution of a
+small linear system in the update $\Delta$:
+\[
+\underbrace{\Bigl(\tfrac{1}{\sigma_{\text{meas}}^2} J^\top J + \tfrac{1}{\sigma_n^2} I\Bigr)}_{\textcolor{osuorange}{\text{curvature, with damping}}}
+\;\Delta
+\;=\;
+\underbrace{-\tfrac{1}{\sigma_{\text{meas}}^2} J^\top r}_{\textcolor{osuorange}{\text{data pull}}}
+\;+\;
+\underbrace{\tfrac{1}{\sigma_n^2}(x - z)}_{\textcolor{osuorange}{\text{coupling pull}}}.
+\]
+\vspace{-0.3em}
+
+\textbf{Piece by piece.}
+\begin{itemize}\itemsep=2pt
+\item $\Delta$ is the update we are solving for. After solving:
+  $z \leftarrow z + \Delta$.
+\item $J^\top J$ is the curvature of the data term. In directions
+  where $J$ has big columns (sensitive pixels), the curvature is big
+  and the step is small. The $\sigma_n^{-2} I$ damping fills in the
+  directions $J$ cannot see, so the matrix is always invertible.
+\item $r = F(\sigma_{\text{bg}} + z) - y_{\text{obs}}$ is the current
+  residual. Multiplying by $J^\top$ back-projects it onto pixels:
+  ``which pixels would reduce this residual.''
+\item $(x - z)$ is the coupling restoring force: pulls $z$ back toward
+  the current $x$.
+\end{itemize}
+
 \centering
-\textcolor{osuorange}{That extra strength is what commits the chain to the right digit.}
+\textcolor{osuorange}{One Gauss-Newton step does the work of dozens of gradient steps on ill-conditioned $J$.}
 \end{frame}
 
 %==============================================================
@@ -273,6 +315,72 @@ random noise. By iteration 5 a digit shape is forming. By iteration 26
 the digit identity (a 5) is settled, though the strokes are still a bit
 smudged. By iteration 80 the chain has converged to a clean tilted 5
 with misfit around $10^{-7}$. Every other chain looks similar.}
+\end{frame}
+
+%==============================================================
+\begin{frame}{Same chain, animated: watch the digit class lock in}
+\begin{columns}[T]
+\column{0.40\textwidth}
+\centering
+\animategraphics[autoplay,loop,width=\linewidth]{8}{frames_competition/frame_}{0}{80}
+
+\column{0.60\textwidth}
+\vspace{0.1em}
+\footnotesize
+The filmstrip on the previous slide showed six time-points. Here is the
+same chain animated through all 80 iterations.
+
+\vspace{0.4em}
+\textbf{What to watch for.} In the first $\sim$ 5 iterations the image
+is still essentially noise. Around iteration 10 to 15 the
+\textbf{data step} (Gauss-Newton) has accumulated enough information
+about the voltages that the iterate starts to look like a coherent
+shape. By iteration 20 the digit class is locked in: this chain will
+be a 5, not an 8 or a 3. From there on, the prior step polishes the
+strokes and the data step nudges the pixels for a tighter fit.
+
+\vspace{0.4em}
+\textcolor{osuorange}{The digit identity is decided early. The rest is refinement.}
+\end{columns}
+\end{frame}
+
+%==============================================================
+\begin{frame}{Where each chain starts, and why answers can disagree}
+\footnotesize
+\textbf{Where does a chain start?} Not from the measurements. Each
+chain starts from a fresh draw of pure Gaussian noise:
+$x_0 \sim \mathcal{N}(0, I)$. That is just a $28 \times 28$ grid of
+random numbers (TV static). The measurements $y_{\text{obs}}$ enter
+only through the data step, which runs at every iteration. The data
+step pulls toward fitting $y_{\text{obs}}$. The prior step pulls
+toward looking like a digit. Together they convert the random noise
+into the recovered digit.
+
+\vspace{0.5em}
+\textbf{Why several different chains can give different digits.} The
+forward map is a $784 \to 1900$ blur. Two different digits can
+produce voltage readings that agree to many decimal places. So the
+question ``which digit is inside?'' does not have a unique answer
+from the readings alone. The posterior has \emph{several} valleys,
+one per plausible digit.
+
+\vspace{0.5em}
+A single chain commits to whichever valley its random starting noise
+rolls it into. Different chains, different starting noises, different
+valleys. Across our 32 chains, most land on the 5 valley (the
+correct one for this $y_{\text{obs}}$), a few land on the 8 valley.
+We pick the chain with the lowest data misfit. The 5 wins every time.
+
+\vspace{0.4em}
+\centering
+\textcolor{osuorange}{The 32 chains are a safety net.
+The lowest-misfit chain wins the vote.}
+
+\vspace{0.2em}
+{\scriptsize\color{osugray}
+This is also why one held-out test (digit 3) recovers as a 5. That
+particular 3 and a particular 5 produce nearly identical voltage
+readings, so no method can tell them apart from the data alone.}
 \end{frame}
 
 %==============================================================
@@ -375,6 +483,28 @@ genuine ambiguity of the physics: that particular handwritten 3 has a
 curled bottom that produces voltage readings extremely close to those of
 certain 5s. The other nine cases polish to the same $10^{-12}$ regime
 as the competition vector.}
+\end{frame}
+
+%==============================================================
+\begin{frame}{Three of those chains, animated, in parallel}
+\centering
+\begin{tabular}{ccc}
+\animategraphics[autoplay,loop,width=0.24\linewidth]{8}{frames_digit1/frame_}{0}{80} &
+\animategraphics[autoplay,loop,width=0.24\linewidth]{8}{frames_digit7/frame_}{0}{80} &
+\animategraphics[autoplay,loop,width=0.24\linewidth]{8}{frames_digit8/frame_}{0}{80} \\[0.2em]
+{\footnotesize held-out 1} & {\footnotesize held-out 7} & {\footnotesize held-out 8}
+\end{tabular}
+
+\vspace{0.8em}
+{\footnotesize
+Three different held-out test images, three independent chains, all
+running with the same hyperparameters and the same diffusion model.
+Each chain starts from its own fresh Gaussian noise. Notice the
+common pattern: in the first $\sim 15$ iterations the chain commits
+to a digit class, and the remaining $\sim 65$ iterations sharpen the
+strokes and drive the misfit down. There is no template database
+anywhere in the pipeline. The diffusion prior and the Gauss-Newton
+data step do all the work.}
 \end{frame}
 
 %==============================================================

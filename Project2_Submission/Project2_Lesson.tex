@@ -853,7 +853,111 @@ $\bullet$ shrink $\sigma_n$.
 Run 80 of these per chain. Run 32 chains in parallel.
 \end{key}
 
-\section{Lesson 20: The data step --- what objective are we minimizing?}
+\section{Lesson 20: Where each chain actually starts}
+
+We have been talking about ``the chain'' and ``the iterates'' without
+saying what the initial state is. This trips people up because diffusion
+talk often makes it sound like you feed your data into the chain at
+$x_T$. You do not. So let's pin this down.
+
+\textbf{Starting state.} At the very beginning of a chain (iteration
+$k=0$), the image $x$ is just a draw of pure Gaussian noise:
+\[
+x_0 \;\sim\; \mathcal{N}(0, I), \qquad \text{a fresh } 28 \times 28 \text{ grid of random numbers.}
+\]
+There is nothing special about $x_0$. It looks like TV static. The
+measurements $y_{\text{obs}}$ are nowhere in this initial state.
+
+\textbf{Where the measurements enter.} The measurements enter the chain
+through the \emph{data step}, which runs at every iteration. The data
+step is what pulls the iterate toward an image whose forward simulation
+matches $y_{\text{obs}}$. The prior step (the DDPM denoise) pulls toward
+an image that looks like a real digit. The two pulls alternate, and
+together they convert the random starting noise into the recovered
+digit.
+
+\begin{intuition}
+A useful picture: imagine you are blindfolded in the middle of an
+unknown room. You cannot see anything (random noise). Someone gives you
+a measurement device that tells you how far each wall is (the data
+step) and a guide who knows what kind of room you are in (the prior
+step). They alternate: the device tells you which way to step, the
+guide tells you which way to face. After many alternations you have
+walked to a unique spot in the room. That spot is the recovered
+digit.
+\end{intuition}
+
+\textbf{Why noise and not the measurements as the starting state?}
+Because the measurements live in a different space. There are 1900 of
+them, and the image is 784 pixels. They are related through the forward
+simulator $F$, not by a simple lookup. The way to get from $y_{\text{obs}}$
+to an image is to repeatedly evaluate $F$ on candidate images and
+correct them, which is exactly what the data step does. The starting
+image just has to be in the right space (a $28 \times 28$ grid). Pure
+noise is the simplest choice that is in the right space and not biased
+toward any particular digit.
+
+\section{Lesson 21: Why several different chains can land on different digits}
+
+We run 32 chains in parallel because the answer is not always unique.
+Two different chains can start from two different random noises, follow
+their own trajectories, and end up in two different digit-shaped images.
+Both of those images may fit $y_{\text{obs}}$ reasonably well. This is
+not a bug. It is what the physics of the problem actually looks like.
+
+\textbf{Why multiple answers can exist.} The forward simulator $F$ maps
+784 pixels to 1900 readings, but the map is not one-to-one in any
+useful sense. The boundary electrodes only see a blurred summary of the
+inside. Two different digits can produce edge readings that agree to
+many decimal places. So the question ``which digit is inside?'' does
+not have a unique answer just from the readings. There is a set of
+digit-shaped images, each of which fits the readings to within
+measurement noise.
+
+The picture below is the cartoon of what is happening. The horizontal
+axis is the space of all possible images. The vertical axis is the data
+misfit. There are several valleys (basins), each one centered on an
+image that fits the data well. The PnP-DM chain rolls into whichever
+valley its random starting noise puts it nearest. A single chain
+commits to one valley and stays there.
+
+\begin{aside}
+\textbf{This is the same problem Project 1 had.} Project 1 saw it in
+the form of ``start a gradient-descent search at a 2, get back a 2;
+start it at a 5, get back a 5.'' The cure there was an exhaustive
+template search over 60{,}000 candidates, so the right valley was
+always found. Project 2 cannot use that trick (the prior must be a
+diffusion model), so instead we sample many chains and pick the one
+with the lowest misfit.
+\end{aside}
+
+\textbf{What our 32 chains actually do.} Different starting noise leads
+different chains toward different digit shapes during the
+high-$\sigma_n$ phase, when the slack lets each chain explore widely.
+As $\sigma_n$ shrinks, each chain commits to one shape. Most of our 32
+chains land on the right digit (a 5 for the competition vector), but a
+few land on a similar-looking 8 or 3. The lowest-misfit chain among the
+32 wins, and in our runs that has always been a 5.
+
+\textbf{When this fails.} On one of the 10 held-out digits in Lesson
+37, the lowest-misfit chain was wrong. The truth was a 3 with a
+tightly curled bottom, and our pipeline returned a 5. The reason is
+that the particular 3 and a particular 5 produce voltage readings that
+are nearly identical. Even with 32 chains, the chain that lands on the
+5 has lower misfit than the chain that lands on the 3, because the 5
+is what the data is actually nearer to. The data is genuinely
+ambiguous between those two digits, and no method can know better than
+the data.
+
+\begin{key}
+The 32 chains are a safety net against getting unlucky with one chain.
+Different random starts explore different valleys; the lowest-misfit
+chain wins. When the physics is genuinely ambiguous, the lowest-misfit
+chain can still be wrong, which is what the held-out 3-recovered-as-5
+case shows.
+\end{key}
+
+\section{Lesson 22: The data step --- what objective are we minimizing?}
 
 Looking at the joint distribution from Lesson 18, when we hold $x$
 fixed and just update $z$, the prior factor $p(x)$ doesn't depend on $z$
@@ -873,8 +977,9 @@ Both of these are bell curves over $z$:
 \end{itemize}
 
 We want the $z$ that maximizes the product. Take the negative log
-(which turns ``maximize a product of bell curves'' into ``minimize a sum
-of squared deviations,'' a standard trick), and drop additive constants:
+(which turns ``maximize a product of bell curves'' into ``minimize a
+sum of squared deviations,'' a standard trick), and drop additive
+constants:
 \[
 \boxed{\;\;
 \mathcal{L}(z)
@@ -884,27 +989,48 @@ of squared deviations,'' a standard trick), and drop additive constants:
 \frac{1}{2 \sigma_n^2}\;\norm{z - x}^2. \;\;}
 \]
 
-Unpack this:
+Let's name every piece, left to right.
+
 \begin{itemize}[leftmargin=2em]
-\item The first term is the \emph{data misfit}: how far off the
-  simulator output is from the observed measurements. Smaller is
-  better.
-\item The second term is the \emph{coupling penalty}: how far $z$ has
-  drifted from the current $x$. Smaller is better.
-\item Both terms are scaled by $\frac{1}{2 \cdot \text{variance}}$.
-  This is the standard weight for a Gaussian's quadratic exponent.
-  Smaller variance $\Rightarrow$ bigger weight $\Rightarrow$ stronger
-  pull.
-\item We use $\sigma_{\text{bg}} + z$ in the simulator because in the
-  ERT physics, $\sigma = \sigma_{\text{bg}} + x$: the conductivity is
-  the background plus the contrast.
+\item $\mathcal{L}(z)$ on the left is the \emph{objective} we are
+  minimizing. We choose the $z$ that makes this number smallest. The
+  $z$ that minimizes $\mathcal{L}$ becomes the new $z$ for this Gibbs
+  step.
+\item $\frac{1}{2\sigma_{\text{meas}}^2}$ in front of the first term is
+  a weight. $\sigma_{\text{meas}}$ is how noisy we believe the
+  measurements are. Smaller $\sigma_{\text{meas}}$ means we trust the
+  measurements more, which means a bigger weight, which means a
+  stronger pull toward fitting the data.
+\item $\norm{y_{\text{obs}} - F(\sigma_{\text{bg}} + z)}^2$ is the
+  \emph{data misfit}. $y_{\text{obs}}$ is the 1900 measured voltages
+  the professor gave us. $F$ is the forward simulator. $\sigma_{\text{bg}} + z$
+  is the conductivity image (background plus contrast). $F(\sigma_{\text{bg}} + z)$
+  is what voltages we would have measured if the true image were
+  $\sigma_{\text{bg}} + z$. The squared norm sums the per-electrode
+  errors. This term is small when our candidate $z$ explains the
+  measurements.
+\item $\frac{1}{2 \sigma_n^2}$ in front of the second term is the
+  other weight. $\sigma_n$ is the slack between $z$ and the current
+  $x$. Smaller $\sigma_n$ means tighter coupling: $z$ has to stay
+  closer to $x$.
+\item $\norm{z - x}^2$ is the \emph{coupling penalty}. This term is
+  small when $z$ stays near the current $x$.
 \end{itemize}
+
+Read together, the objective says: ``find a $z$ that explains the
+measurements (first term), but do not stray too far from the current
+$x$ (second term).'' The relative weights of the two terms are set by
+$\sigma_{\text{meas}}$ and $\sigma_n$. At the start of the chain
+$\sigma_n$ is large (loose leash), so the data term dominates and $z$
+fits the measurements aggressively. As $\sigma_n$ shrinks during the
+schedule, $z$ has to stay close to $x$, and the two variables converge
+to one image.
 
 We want $\arg\min_z \mathcal{L}(z)$. Because $F$ is nonlinear, there's
 no closed-form minimum. But we can take \emph{one Gauss-Newton step}.
 That step is the entire content of the next three lessons.
 
-\section{Lesson 21: Gauss-Newton step 1 --- linearize $F$}
+\section{Lesson 23: Gauss-Newton step 1 --- linearize $F$}
 
 Around the current $z$, we approximate $F$ by its first-order Taylor
 expansion. That means: instead of working with the full nonlinear $F$,
@@ -948,10 +1074,10 @@ the resulting easy problem, take a step, and repeat. This is the
 standard Gauss-Newton trick.
 \end{intuition}
 
-\section{Lesson 22: Gauss-Newton step 2 --- set the gradient to zero}
+\section{Lesson 24: Gauss-Newton step 2 --- set the gradient to zero}
 
 Substituting the linear approximation into the full objective from
-Lesson 20:
+Lesson 22:
 \[
 \mathcal{L}_{\text{lin}}(\Delta)
 \;=\;
@@ -1001,7 +1127,7 @@ Again the $2$ cancels the $\tfrac12$. The second term contributes
 This is one vector equation in the unknown $\Delta$. Solve it in the
 next lesson.
 
-\section{Lesson 23: Gauss-Newton step 3 --- rearrange to a linear system}
+\section{Lesson 25: Gauss-Newton step 3 --- rearrange to a linear system}
 
 Take the equation from Lesson 22 and put all the $\Delta$ terms on
 the left, everything else on the right.
@@ -1041,26 +1167,63 @@ Box the result for emphasis:
 \;\;}
 \]
 
-This is a $784 \times 784$ linear system in the unknown $\Delta$. The
-matrix on the left is symmetric positive-definite (because $J^\top J$
-is positive-semidefinite and $I$ is positive-definite, and the sum
-of those is positive-definite). We solve it directly with
-\texttt{torch.linalg.solve} --- on a $784 \times 784$ system that takes
-a few milliseconds. Then we set
+Read this piece by piece.
+
+\textbf{The unknown.} $\Delta$ on the left side is the update we are
+solving for. After we compute it, we set $z \leftarrow z + \Delta$.
+So this whole equation is asking ``how much should we move $z$?''
+
+\textbf{The left-hand-side matrix.} The big $784 \times 784$ matrix in
+parentheses tells us \emph{how the objective curves}. Two pieces:
+
+\begin{itemize}[leftmargin=2em]
+\item $\frac{1}{\sigma_{\text{meas}}^2} J^\top J$ is the
+  \emph{curvature of the data term}. In directions where the Jacobian
+  $J$ has big columns (those pixels move many measurements a lot),
+  $J^\top J$ is big, and the matrix says ``small step here.'' In
+  directions where the Jacobian has tiny columns (those pixels are
+  invisible from the boundary), $J^\top J$ is near zero, and that
+  direction would have no information at all.
+\item $\frac{1}{\sigma_n^2} I$ is \emph{damping}. It is a scaled
+  identity, which just adds the same positive number to every diagonal
+  entry. Its job is to fill in the directions where $J^\top J$ is near
+  zero, so the matrix is always invertible. Without this term the
+  matrix would be singular and we could not solve the system. The size
+  of the damping is set by $\sigma_n$: tight coupling means strong
+  damping.
+\end{itemize}
+
+\textbf{The right-hand side.} The vector on the right is what we are
+trying to fit. Two pieces:
+
+\begin{itemize}[leftmargin=2em]
+\item $-\frac{1}{\sigma_{\text{meas}}^2} J^\top r$ is the
+  \emph{gradient of the data term}. $r = F(\sigma_{\text{bg}} + z) -
+  y_{\text{obs}}$ is the current residual. Multiplying by $J^\top$
+  back-projects that residual onto the pixels: ``which pixels would
+  reduce this residual if we moved them?'' The minus sign means we
+  step \emph{against} the residual.
+\item $\frac{1}{\sigma_n^2} (x - z)$ is the \emph{coupling restoring
+  force}: a vector pointing from $z$ back toward the current $x$. It
+  pulls our update direction toward staying near $x$.
+\end{itemize}
+
+\textbf{Reading the whole equation in English.} (curvature matrix)
+times (update) equals (data pull) plus (coupling pull). It is a
+weighted balance: the weights are $1/\sigma_{\text{meas}}^2$ for the
+data and $1/\sigma_n^2$ for the coupling. Solving it gives the
+$\Delta$ that locally minimizes the objective.
+
+\textbf{How we solve it.} The matrix on the left is symmetric
+positive-definite (because $J^\top J$ is positive-semidefinite, $I$
+is positive-definite, and the sum is positive-definite). We solve it
+directly with \texttt{torch.linalg.solve} in a few milliseconds. Then
+we set
 \[
 z \;\leftarrow\; z + \Delta.
 \]
-That's one Gauss-Newton step. In our code we do 1 or 2 GN steps per
-data update; the first usually does most of the work.
-
-\textbf{What does the matrix on the left mean?} The $J^\top J$ piece
-captures the curvature of the data term: in directions where $J$
-``sees a lot,'' $J^\top J$ is large, and the corresponding Newton
-step is small (the data is already constrained there). In directions
-where $J$ ``sees little,'' $J^\top J$ is near zero, and the
-$1/\sigma_n^2 \cdot I$ piece keeps the matrix invertible. The damping
-is what lets us solve the system robustly even when $J^\top J$ is
-ill-conditioned --- which it always is for ERT.
+That is one Gauss-Newton step. In our code we do one or two of these
+per data update; the first usually does most of the work.
 
 \begin{intuition}
 The key contrast with DPS: DPS would take a step $-\zeta\,J^\top r$
@@ -1071,7 +1234,7 @@ aggression is what commits the chain to the right digit within a few
 iterations.
 \end{intuition}
 
-\section{Lesson 24: The prior step --- one diffusion denoise}
+\section{Lesson 26: The prior step --- one diffusion denoise}
 
 After updating $z$, we update $x$ given $z$. Holding $z$ fixed, the
 joint reduces to
@@ -1105,7 +1268,7 @@ out-of-distribution input, and the prediction would be unreliable.
 Adding $\sigma_n \xi$ puts $z$ back on the network's training
 distribution at noise level $\sigma_n$.
 
-\section{Lesson 25: Multi-chain mode coverage}
+\section{Lesson 27: Multi-chain mode coverage}
 
 PnP-DM, as described so far, runs one chain. But the posterior
 $p(x \mid y_{\text{obs}})$ might have several modes --- distinct
@@ -1133,7 +1296,7 @@ select the winner. Below are 8 sample chains from a quick demo run:
 \includegraphics[width=0.99\textwidth]{fig_chains_compact.png}
 \end{center}
 
-\section{Lesson 26: One more crucial piece --- rotation augmentation}
+\section{Lesson 28: One more crucial piece --- rotation augmentation}
 
 There is one detail to handle before any of this works: the pretrained
 diffusion model has only ever seen \emph{upright} digits during
@@ -1184,7 +1347,7 @@ pre-polish answer.
 \addcontentsline{toc}{section}{Part V --- The polish: Gauss-Newton with conjugate gradient}
 %==============================================================
 
-\section{Lesson 27: Why we still need a polish step}
+\section{Lesson 29: Why we still need a polish step}
 
 After PnP-DM, the best chain has misfit about $1.84 \times 10^{-7}$.
 That's already very good. But it's not at the bottom of the data-fit
@@ -1202,7 +1365,7 @@ polish is walking the last hundred steps to the lowest point of the
 valley. Two different jobs, two different tools.
 \end{intuition}
 
-\section{Lesson 28: Gradient descent has \emph{linear} convergence}
+\section{Lesson 30: Gradient descent has \emph{linear} convergence}
 
 The simplest polish would be gradient descent: at each iteration,
 take a step in the direction of $-J^\top r$. With some momentum
@@ -1228,7 +1391,7 @@ slope. In a long narrow valley, gradient descent walks across the
 valley (not down it), zigzagging from one wall to the other. Each
 zigzag makes only a tiny bit of progress down the valley.
 
-\section{Lesson 29: Newton's method has \emph{quadratic} convergence}
+\section{Lesson 31: Newton's method has \emph{quadratic} convergence}
 
 Newton's method fixes the slowness by accounting for the local
 curvature. For our least-squares objective, the Newton step is
@@ -1252,7 +1415,7 @@ Forming and inverting that matrix is slow and unstable. The fix is
 called conjugate gradient, which we'll cover in Lesson 31. First, let's
 look at the contrast between GD and Newton on a picture.
 
-\section{Lesson 30: A picture of GD vs Newton}
+\section{Lesson 32: A picture of GD vs Newton}
 
 Below is a 2D quadratic bowl that is much longer in one direction than
 the other (a classic ill-conditioned problem). The red trajectory is
@@ -1284,7 +1447,7 @@ the bottom is.'' That's the moral, even if the implementation has to
 work around the matrix inverse.
 \end{key}
 
-\section{Lesson 31: Conjugate gradient --- solving the system without inverting}
+\section{Lesson 33: Conjugate gradient --- solving the system without inverting}
 
 The Newton step requires solving the linear system
 \[
@@ -1316,7 +1479,7 @@ $(J^\top J + \lambda I)\,v$,'' a right-hand side $-J^\top r$, and a
 maximum number of iterations (we use 100). CG returns a $\Delta$ that
 is the Newton direction.
 
-\section{Lesson 32: A worked example --- CG on a $2\times 2$ system}
+\section{Lesson 34: A worked example --- CG on a $2\times 2$ system}
 
 To make CG concrete, let's solve a small system by hand. Suppose
 \[
@@ -1377,7 +1540,7 @@ iterations, using only matrix-vector products. For our $784 \times
 because the matrix has a favorable spectrum (a few large eigenvalues
 dominate).
 
-\section{Lesson 33: Line search and damping for safety}
+\section{Lesson 35: Line search and damping for safety}
 
 A naive Newton step can overshoot if the local quadratic approximation
 is poor far from the optimum. Two safety mechanisms.
@@ -1399,7 +1562,7 @@ With these two safety mechanisms, the polish behaves like gradient
 descent when far from the optimum (safe), and like Newton's method
 when close to the optimum (fast). We get the best of both.
 
-\section{Lesson 34: The polish trajectory in practice}
+\section{Lesson 36: The polish trajectory in practice}
 
 We run the polish on PnP-DM's best chain for up to 500 outer iterations,
 with at most 150 CG inner iterations each. The misfit drops:
@@ -1443,7 +1606,7 @@ to the float64 numerical floor.
 \addcontentsline{toc}{section}{Part VI --- The pipeline, the numbers, the explanation}
 %==============================================================
 
-\section{Lesson 35: The pipeline in three commands}
+\section{Lesson 37: The pipeline in three commands}
 
 \textbf{One-time setup ($\sim 20$ minutes):}
 \begin{verbatim}
@@ -1468,7 +1631,7 @@ python3 gn_cg_polish.py --init_mat ../pnp_dm_v3_answer.mat \
 \end{verbatim}
 Drives the misfit down to the float64 floor and saves the final answer.
 
-\section{Lesson 36: The result on the competition vector}
+\section{Lesson 38: The result on the competition vector}
 
 Running this on the professor's competition vector:
 
@@ -1486,7 +1649,7 @@ Right: the recovered conductivity image, with the digit 5 clearly
 visible. The simulator $F$ applied to the right gives back something
 matching the left to about 13 decimal places.
 
-\section{Lesson 37: Held-out validation}
+\section{Lesson 39: Held-out validation}
 
 To check the pipeline isn't overfit to the competition vector, we ran
 it on 10 unseen MNIST test digits (one per class 0-9). The diffusion
@@ -1520,7 +1683,7 @@ All 9 correctly-recovered images polished to misfits between $6.4
 \times 10^{-13}$ and $7.6 \times 10^{-12}$ --- the same float64 regime
 as the competition vector. The pipeline is robust.
 
-\section{Lesson 38: A 60-second explanation you can give a stranger}
+\section{Lesson 40: A 60-second explanation you can give a stranger}
 
 \begin{intuition}
 ``We had to recover a $28 \times 28$ digit image from 1900 boundary
@@ -1538,7 +1701,7 @@ precision. The whole pipeline takes about 8 minutes after a one-time
 training, and the final misfit was about $6 \times 10^{-13}$.''
 \end{intuition}
 
-\section{Lesson 39: Glossary}
+\section{Lesson 41: Glossary}
 
 \begin{itemize}[leftmargin=2em]
 \item \textbf{Diffusion model.} A neural network trained to predict
@@ -1577,26 +1740,26 @@ training, and the final misfit was about $6 \times 10^{-13}$.''
   gradient. (Lessons 21-23.)
 \item \textbf{Multi-chain mode coverage.} Run multiple chains in
   parallel so different modes of the posterior get explored. We use
-  32. (Lesson 25.)
+  32. (Lesson 27.)
 \item \textbf{Rotation augmentation.} Fine-tune the diffusion model
-  on rotated MNIST so it knows tilted digits are realistic. (Lesson 26.)
+  on rotated MNIST so it knows tilted digits are realistic. (Lesson 28.)
 \item \textbf{Polish.} A separate local optimization that runs after
   PnP-DM to drive the misfit to the numerical floor. (Lessons 27-34.)
 \item \textbf{Linear convergence.} Each step shrinks the error by a
-  constant factor (slow near the optimum). (Lesson 28.)
+  constant factor (slow near the optimum). (Lesson 30.)
 \item \textbf{Quadratic convergence.} Each step roughly squares the
-  error (very fast near the optimum). (Lesson 29.)
+  error (very fast near the optimum). (Lesson 31.)
 \item \textbf{Conjugate gradient (CG).} Iterative method for solving
   a symmetric positive-definite linear system, using only
   matrix-vector products. Converges in $\le n$ iterations on an
   $n \times n$ system. (Lessons 31-32.)
 \item \textbf{Line search.} Shrink the step length until the misfit
-  actually decreases. (Lesson 33.)
+  actually decreases. (Lesson 35.)
 \item \textbf{Trust-region damping.} Grow or shrink the damping
-  parameter based on whether the last step succeeded. (Lesson 33.)
+  parameter based on whether the last step succeeded. (Lesson 35.)
 \item \textbf{Float64 floor.} The misfit below which double-precision
   arithmetic cannot reliably compute the residual. About $6 \times
-  10^{-13}$ for our problem. (Lesson 34.)
+  10^{-13}$ for our problem. (Lesson 36.)
 \end{itemize}
 
 \bigskip
