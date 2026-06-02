@@ -533,4 +533,48 @@ data step do all the work.}
 \end{center}
 \end{frame}
 
+%==============================================================
+\begin{frame}{References}
+\scriptsize
+
+\textbf{The method we used}
+\begin{itemize}\itemsep=1pt
+\item \textbf{PnP-DM.} Wu, Wang, Lin, Sun, \emph{Principled Probabilistic
+Imaging Using Diffusion Models as Plug-and-Play Priors}, NeurIPS 2024.
+arXiv:2405.18782.
+\item \textbf{DDPM.} Ho, Jain, Abbeel, \emph{Denoising Diffusion
+Probabilistic Models}, NeurIPS 2020. arXiv:2006.11239.
+\item \textbf{Tweedie's formula.} Efron, \emph{Tweedie's Formula and
+Selection Bias}, JASA 2011.
+\item \textbf{Pretrained MNIST DDPM.} \texttt{1aurent/ddpm-mnist} on
+Hugging Face (the checkpoint we fine-tuned).
+\end{itemize}
+
+\textbf{Methods we tested or compared against}
+\begin{itemize}\itemsep=1pt
+\item \textbf{DPS.} Chung, Kim, Mccann, Klasky, Ye, \emph{Diffusion
+Posterior Sampling for General Noisy Inverse Problems}, NeurIPS 2022.
+arXiv:2209.14687.
+\item \textbf{DAPS.} Zhang, Chu, Berner, Meng, Anandkumar, Song,
+\emph{Improving Diffusion Inverse Problem Solving with Decoupled Noise
+Annealing}, CVPR 2025. arXiv:2407.01521.
+\item \textbf{Classifier guidance.} Dhariwal, Nichol, \emph{Diffusion
+Models Beat GANs on Image Synthesis}, NeurIPS 2021. arXiv:2105.05233.
+\item \textbf{InverseBench.} Zheng et al., \emph{InverseBench: Benchmarking
+Plug-and-Play Diffusion Models for Inverse Problems in the Physical
+Sciences}, ICLR 2025. arXiv:2503.11043.
+\end{itemize}
+
+\textbf{Classical numerics (the polish) and dataset}
+\begin{itemize}\itemsep=1pt
+\item \textbf{Conjugate gradient.} Hestenes, Stiefel, \emph{Methods of
+Conjugate Gradients for Solving Linear Systems}, J.~Res.~NBS, 1952.
+\item \textbf{Gauss-Newton / Levenberg-Marquardt.} Nocedal, Wright,
+\emph{Numerical Optimization}, 2nd ed., Springer, 2006.
+\item \textbf{ERT2D simulator.} Provided by Prof.~Aghasi (course material).
+\item \textbf{MNIST.} LeCun, Cortes, Burges, \emph{The MNIST Database of
+Handwritten Digits}.
+\end{itemize}
+\end{frame}
+
 \end{document}
