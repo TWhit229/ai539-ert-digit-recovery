@@ -159,8 +159,8 @@ for ax, img, title, mis in zip(
     ax.set_title(title + '\nmisfit ' + mathsci(mis), fontsize=10)
     ax.axis('off')
 plt.suptitle('Polish comparison on the base prior (geomspace schedule)',
-              fontsize=11, fontweight='bold')
-plt.tight_layout()
+              fontsize=11, fontweight='bold', y=1.04)
+plt.tight_layout(rect=[0, 0, 1, 0.94])
 out = f"{LES_DIR}/fig15_tv_vs_lm.png"
 plt.savefig(out, dpi=140, bbox_inches='tight', facecolor='white')
 plt.close()

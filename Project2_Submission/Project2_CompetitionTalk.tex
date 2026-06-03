@@ -473,21 +473,21 @@ is the safety net. The lowest-misfit chain wins.}
 \begin{frame}{The 12-combination sweep}
 \begin{columns}[T]
 \column{0.42\textwidth}
-\footnotesize
+\scriptsize
 We tested all $3 \times 2 \times 2 = 12$ combinations:
 
-\vspace{0.4em}
-\begin{itemize}\itemsep=2pt
+\vspace{0.3em}
+\begin{itemize}\itemsep=1pt
 \item \textbf{Prior:} base / bigger+EMA / class-conditional+CFG
 \item \textbf{Schedule:} geomspace / DAPS++ negative-rho
 \item \textbf{Polish:} Newton / TV-regularized
 \end{itemize}
 
-\vspace{0.5em}
+\vspace{0.4em}
 Two things popped out.
 
-\vspace{0.3em}
-\begin{itemize}\itemsep=2pt
+\vspace{0.2em}
+\begin{itemize}\itemsep=1pt
 \item \textbf{TV polish beat Newton polish in every prior-schedule pair.}
   Uniformly lower misfit \emph{and} cleaner image.
 \item \textbf{The class-conditional prior plus the geomspace schedule
@@ -495,11 +495,11 @@ Two things popped out.
   10^{-11}$, with a clean recognizable 5.
 \end{itemize}
 
-\vspace{0.4em}
+\vspace{0.3em}
 The bottom-right two cells (class-cond + neg-rho) actually converged
-to a class-6-shaped image. That is the schedule pushing the chain
-into a different mode --- the same ambiguity the four failed methods
-hit, surfacing again under a worse schedule.
+to a class-6-shaped image --- the schedule pushed the chain into a
+different mode. Same ambiguity the four early attempts hit, under a
+worse schedule.
 
 \column{0.58\textwidth}
 \centering
