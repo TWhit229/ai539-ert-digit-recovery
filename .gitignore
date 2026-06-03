@@ -26,7 +26,4 @@
 **/.idea/
 **/.vscode/
 
-# Sweep outputs that are too large for git
-# (DDPM checkpoints are tens of MB; results/ mat files are committed)
-**/sweep/ddpm_bigger_rot15_ema/
-**/sweep/ddpm_cond_rot15_ema/
+# Sweep DDPM checkpoints tracked via Git LFS

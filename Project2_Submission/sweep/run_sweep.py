@@ -261,8 +261,8 @@ def main():
                 w.writerow({k: r.get(k, '') for k in keys})
         with open(json_path, 'w') as f:
             json.dump(summary, f, indent=2)
-        print(f"\nSummary → {csv_path}")
-        print(f"Summary → {json_path}")
+        print(f"\nSummary -> {csv_path}")
+        print(f"Summary -> {json_path}")
         print("\nFinal misfits (sorted):")
         for r in sorted(summary, key=lambda r: r['final_misfit']):
             tag = f"{r['prior']}.{r['schedule']}.{r['polish']}"

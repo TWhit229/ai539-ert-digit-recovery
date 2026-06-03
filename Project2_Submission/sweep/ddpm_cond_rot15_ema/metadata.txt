@@ -1,0 +1,4 @@
+class_conditional=True
+num_class_embeds=11
+uncond_label=10
+params_M=64.14
