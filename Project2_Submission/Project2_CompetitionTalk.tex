@@ -187,13 +187,18 @@ problems.
 \vspace{0.5em}
 The chain commits early to whatever upright digit shape is closest to
 the data, then spends the remaining steps polishing that wrong digit.
-DAPS, the classifier, and the template retrieval all sit on top of the
-same broken first stage, so they inherit the same wrong digit.
+DAPS already decouples the prior step from the data step, but its data
+step is still a sequence of small Langevin gradient updates, so it
+inherits the same weakness. The classifier and the template retrieval
+both run on top of a broken first stage, so they inherit its wrong
+digit.
 
 \vspace{0.5em}
-The fix has to be a sampler where the data step is \emph{strong} (not a
-small nudge), and the prior step is \emph{decoupled} from the data step
-so neither pulls the other off course.
+The fix has to give the data step real teeth: instead of a small
+gradient nudge at every iteration, solve a small optimization problem
+that uses the full Jacobian. That lets one update do the work of dozens
+of gradient steps and gives the data enough leverage to push the chain
+out of the wrong basin.
 \end{frame}
 
 %==============================================================
@@ -342,7 +347,8 @@ with misfit around $10^{-7}$. Every other chain looks similar.}
 \vspace{0.1em}
 \footnotesize
 The filmstrip on the previous slide showed six time-points. Here is the
-same chain animated through all 80 iterations.
+same chain animated through all 80 iterations (a chain from the base
+PnP-DM sampler).
 
 \vspace{0.4em}
 \textbf{What to watch for.} In the first $\sim$ 5 iterations the image
@@ -381,9 +387,10 @@ one per plausible digit.
 \vspace{0.5em}
 A single chain commits to whichever valley its random starting noise
 rolls it into. Different chains, different starting noises, different
-valleys. Across our 32 chains, most land on the 5 valley (the
-correct one for this $y_{\text{obs}}$), a few land on the 8 valley.
-We pick the chain with the lowest data misfit. The 5 wins every time.
+valleys. With the base PnP-DM sampler, across 32 chains most land on
+the 5 valley (the correct one for this $y_{\text{obs}}$), a few land on
+the 8 valley. We pick the chain with the lowest data misfit. The 5
+wins every time.
 
 \vspace{0.4em}
 \centering
@@ -394,7 +401,10 @@ The lowest-misfit chain wins the vote.}
 {\scriptsize\color{osugray}
 This is also why one held-out test (digit 3) recovers as a 5. That
 particular 3 and a particular 5 produce nearly identical voltage
-readings, so no method can tell them apart from the data alone.}
+readings, so no method can tell them apart from the data alone. The
+class-conditional upgrade later in this talk gives the chain a way
+to commit to a class hypothesis directly, instead of waiting for the
+data step to roll it into a valley.}
 \end{frame}
 
 %==============================================================
@@ -409,14 +419,16 @@ PnP-DM the prior step keeps nudging back toward upright, while the data
 step pulls toward tilted. Without intervention the prior wins.
 
 \vspace{0.5em}
-The fix is to keep training the diffusion model a little longer, but on
-rotated copies of the MNIST digits. Five epochs of this on a MacBook
-takes about twenty minutes.
+The fix is to train the diffusion model on rotated copies of the MNIST
+digits. For the base prior we fine-tune the pretrained checkpoint for
+five epochs ($\sim 20$ minutes on a MacBook). For the new prior we
+retrain from scratch with rotation augmentation for 30 epochs ($\sim
+15$ minutes on a 5090).
 
 \vspace{0.5em}
-After the extra training, the model thinks tilted digits are just as
-normal as upright ones. The prior step stops fighting the data, and the
-chain converges to the truth.
+After this training, the model thinks tilted digits are just as normal
+as upright ones. The prior step stops fighting the data, and the chain
+converges to the truth.
 
 \column{0.45\textwidth}
 \centering
@@ -712,14 +724,13 @@ regime as the competition vector.}
 
 \vspace{0.8em}
 {\footnotesize
-Three different held-out test images, three independent chains, all
-running with the same hyperparameters and the same diffusion model.
-Each chain starts from its own fresh Gaussian noise. Notice the
-common pattern: in the first $\sim 15$ iterations the chain commits
-to a digit class, and the remaining $\sim 65$ iterations sharpen the
-strokes and drive the misfit down. There is no template database
-anywhere in the pipeline. The diffusion prior and the Gauss-Newton
-data step do all the work.}
+Three different held-out test images, three independent chains from
+the base PnP-DM sampler. Each chain starts from its own fresh Gaussian
+noise. Notice the common pattern: in the first $\sim 15$ iterations
+the chain commits to a digit class, and the remaining $\sim 65$
+iterations sharpen the strokes and drive the misfit down. There is no
+template database anywhere in the pipeline. The diffusion prior and
+the Gauss-Newton data step do all the work.}
 \end{frame}
 
 %==============================================================
@@ -729,10 +740,9 @@ data step do all the work.}
 \item Four standard diffusion-based recipes (DPS, DAPS, classifier-vote,
   template retrieval) all committed to the wrong digit because their
   data step is too weak.
-\item Variable splitting separates the two jobs. PnP-DM replaces the
-  gradient nudge with a Gauss-Newton solve, which commits the chain to
-  the right digit in a few iterations. 32 chains in parallel cover the
-  posterior modes.
+\item Variable splitting separates the two jobs and the Gauss-Newton
+  solve gives the data step real teeth, so it can push the chain out
+  of a wrong-digit basin. 32 parallel chains cover the posterior modes.
 \item Rotation augmentation is a one-time fix that unlocks the
   diffusion prior for tilted digits.
 \item On top of the base PnP-DM sampler we layered three improvements:

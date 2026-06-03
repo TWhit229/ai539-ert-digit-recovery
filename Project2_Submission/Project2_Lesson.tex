@@ -49,6 +49,10 @@ By the end you should be able to say, in your own words, all of these:
 \item How the PnP-DM sampler turns the diffusion model into a tool for
   this problem.
 \item Why we add a Gauss-Newton polish at the end.
+\item Why the base polish over-fits, and how a TV-regularized polish
+  fixes it.
+\item How class-conditional diffusion with classifier-free guidance
+  lets each chain commit to a digit class explicitly.
 \item What the final number is and what it means.
 \end{enumerate}
 \end{quote}
@@ -725,11 +729,18 @@ the method in the rest of this guide:
 
 All four recipes share one structural flaw: a weak per-step data tug
 that cannot pull the chain out of whatever upright-digit basin the
-prior settled into. The fix --- and the actual method we use --- is to
-\emph{separate} the two tugs. Instead of one variable getting both
-tugs simultaneously, we introduce a second variable so that each tug
-acts on its own variable alone. The two variables are then glued
-together with a soft penalty.
+prior settled into. DAPS already separates the prior step from the
+data step (a strict improvement over DPS in that respect), but its
+data step is still a sequence of small Langevin gradient updates, so
+it inherits the same weakness.
+
+The fix --- and the actual method we use --- has two parts. \emph{First},
+introduce a second variable so each pull acts on its own variable
+alone (the two are glued together with a soft penalty). \emph{Second},
+make the data update use the full Jacobian via a small Gauss-Newton
+solve, so one update does the work of dozens of gradient steps. The
+combination is called PnP-DM (Wu et al., NeurIPS 2024) and the rest of
+this guide is how to actually run it.
 
 \begin{center}
 \begin{tikzpicture}
@@ -1305,13 +1316,16 @@ We use 32 chains. After 80 Gibbs iterations per chain, we have 32 final
 images. We compute the misfit of each and keep the one with the lowest.
 That's \emph{mode selection by misfit}.
 
-In our problem on the competition vector, most chains converge to
-$5$-shaped images, while a small minority converge to a $5$-like-$8$
-shape (a $5$ with its top loop closed). The lowest-misfit chain ---
-the one we keep --- is always a $5$, with pre-polish misfit
-$1.84 \times 10^{-7}$ in the full $32$-chain run. The slightly-higher
-misfits of the $8$-shaped chains are why we use ``pick by misfit'' to
-select the winner. Below are 8 sample chains from a quick demo run:
+In our problem on the competition vector (using the base PnP-DM
+sampler), most chains converge to $5$-shaped images, while a small
+minority converge to a $5$-like-$8$ shape (a $5$ with its top loop
+closed). The lowest-misfit chain --- the one we keep --- is always a
+$5$, with pre-polish misfit $1.84 \times 10^{-7}$ in the full
+$32$-chain run. The slightly-higher misfits of the $8$-shaped chains
+are why we use ``pick by misfit'' to select the winner. Lesson 40
+shows how a class-conditional prior turns this lottery into 32 explicit
+class hypotheses with classifier-free guidance. Below are 8 sample
+chains from a quick demo run of the base sampler:
 
 \begin{center}
 \includegraphics[width=0.99\textwidth]{fig_chains_compact.png}
@@ -1333,7 +1347,9 @@ fight; the prior wins; we get the wrong digit.
 it} for a short while on rotated MNIST. Every time we pull a training
 image, we first rotate it by a random angle uniformly in $[-15^\circ,
 +15^\circ]$, then apply the usual training loss. Five epochs of this
-takes about 20 minutes on a MacBook.
+takes about 20 minutes on a MacBook. (The new pipeline in Part VI uses
+this same trick but trains a bigger model from scratch with EMA
+weights; see Lesson 39.)
 
 After fine-tuning, the network believes that tilted digits are
 realistic. The prior step no longer fights the data. Everything
@@ -1933,10 +1949,11 @@ For each test digit:
 \item Compare to the true label.
 \end{enumerate}
 
-Result: \textbf{9 of 10 correct} on the base pipeline. The class-conditional
-+ CFG + TV polish pipeline is strictly better at recovering image quality;
-in particular, with explicit class hypotheses it avoids the wrong-digit
-basin that the one held-out failure fell into.
+Result: \textbf{9 of 10 correct} on the base pipeline. We did not
+re-run the held-out sweep with the new (class-conditional + CFG + TV)
+pipeline because each held-out digit costs about ten minutes; the
+visual comparison on the competition vector (Lesson 41) is the
+evidence we have for the new pipeline's image-quality improvement.
 
 \begin{center}
 \includegraphics[width=0.99\textwidth]{validate_final.png}
@@ -1948,9 +1965,10 @@ bottom that, under the ERT physics, produces voltage readings
 extremely similar to those of certain hand-drawn 5s. The two digits are
 nearly physically indistinguishable through 1900 boundary
 measurements. That's an ambiguity of the \emph{problem}, not of our
-method. With the new class-conditional pipeline, we expect this case
-to resolve correctly: chains seeded to class 3 commit to a 3 from the
-start.
+method. With the new class-conditional pipeline, the chain assigned
+class label 3 would commit to a 3 from the start, so we would at
+least see a 3-shaped recovery in the chain pool; whether that chain
+also produces the lowest data misfit is the open question.
 
 All 9 correctly-recovered images polished to misfits between $6.4
 \times 10^{-13}$ and $7.6 \times 10^{-12}$ on the base pipeline.
