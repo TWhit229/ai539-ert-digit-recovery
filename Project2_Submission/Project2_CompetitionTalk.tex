@@ -121,33 +121,32 @@ Bottom: the network's clean-image guess at each.}
 
 %==============================================================
 \begin{frame}{What we tried first, and why none of it worked}
-\footnotesize
+\scriptsize
 \begin{columns}[T]
 \column{0.58\textwidth}
 
-We ran four standard diffusion-based recipes before landing on the
-method in this talk. Each one steers a diffusion model with the ERT
-measurements in a different way.
+We ran five diffusion-based recipes before landing on the method in
+this talk.
 
 \vspace{0.3em}
 \begin{itemize}\itemsep=2pt
-\item \textbf{DPS} (Diffusion Posterior Sampling). At every denoising
-  step, nudge the image in the direction of the data gradient
-  $\nabla \log p(y\mid x)$. \textit{Result: 4 of 5 chains converged to
-  a 4. Wrong digit every time.}
-\item \textbf{DAPS} (Decoupled Annealing Posterior Sampling). The
-  diffusion model is responsible for class and shape; a separate
-  Langevin step is responsible for fitting the data. \textit{Result:
-  still a 4 most runs; a single 5 only when seeded carefully.}
-\item \textbf{DI-RTG v1} (DAPS warm-start + an MNIST classifier vote +
-  Levenberg-Marquardt polish). The classifier was supposed to break
-  the ambiguity. \textit{Result: classifier voted ``4'' too. Polish
-  drove a wrong-digit answer to high precision.}
-\item \textbf{DI-RTG v2} (DAPS warm-start + template retrieval from
-  the MNIST training set). \textit{Result: the closest template was
-  always upright, but the competition digit is tilted by 7.5 degrees.
-  Retrieved templates were the right digit but at the wrong pose, and
-  the polish could not unfold them.}
+\item \textbf{DPS} (Diffusion Posterior Sampling). Nudge the image by
+  the data gradient at every denoising step. \textit{Result: 4 of 5
+  chains converged to a 4. Wrong digit every time.}
+\item \textbf{DAPS} (Decoupled Annealing Posterior Sampling). Diffusion
+  step for class and shape, separate Langevin step for the data.
+  \textit{Result: still mostly 4s. Same weak data step as DPS.}
+\item \textbf{DI-RTG v1} (DAPS warm-start + MNIST classifier vote +
+  Levenberg-Marquardt polish). \textit{Result: classifier voted ``4''
+  too. Polish drove a wrong-digit answer to high precision.}
+\item \textbf{DI-RTG v2} (DAPS warm-start + template retrieval).
+  \textit{Result: nearest training image was always upright, truth is
+  tilted by 7.5 degrees.}
+\item \textbf{Base PnP-DM + Newton polish} (variable splitting,
+  rotation-augmented DDPM, Gauss-Newton data step, Newton polish to
+  float64 floor). \textit{Result: correct digit, but the polish
+  drives the misfit to $\sim 10^{-13}$ by fitting round-off noise as
+  per-pixel speckle. Clean math, ugly picture.}
 \end{itemize}
 
 \column{0.42\textwidth}
@@ -156,53 +155,52 @@ measurements in a different way.
 {\scriptsize\color{osugray} The DPS run that started it all. Eight
 chains, each locking onto a wrong digit (3, 4, 6, 8). Not a 5 in sight.}
 
-\vspace{0.6em}
+\vspace{0.4em}
 \begin{center}
-{\footnotesize\textcolor{osuorange}{\textbf{Pattern.}}}\\
+{\footnotesize\textcolor{osuorange}{\textbf{Two failure modes.}}}\\
 {\scriptsize\color{osugray}
-Every recipe that nudges the diffusion chain by a weak data gradient at
-each step commits to whichever upright digit shape is closest to the
-data, then refuses to leave that basin. The basin happened to be a 4.}
+The first four pick the \emph{wrong digit} because the data step is
+too weak. The base PnP-DM picks the right digit but produces an
+\emph{ugly picture} because the Newton polish over-fits round-off noise.
+Our method has to fix both.}
 \end{center}
 \end{columns}
 \end{frame}
 
 %==============================================================
-\begin{frame}{Why those four approaches all failed in the same way}
+\begin{frame}{Our method: three pieces working together}
 \footnotesize
-Two things broke at once, and every standard recipe inherits both
-problems.
+We need a sampler that picks the \emph{right} digit \emph{and} produces
+a clean image. The method has three pieces; each one fixes one specific
+failure of the recipes on the previous slide.
 
-\vspace{0.5em}
-\begin{itemize}\itemsep=4pt
-\item The little nudge at each step is in the direction of the data
-  gradient. That gradient is dominated by directions the boundary
-  sensors hardly see, so most of the nudge goes to waste. The piece of
-  the gradient that actually moves the digit toward the data is tiny.
-\item The denoising process only has about 100 steps. A hundred weak
-  nudges are not enough to override the prior's pull toward the most
-  common-looking upright digit.
+\vspace{0.6em}
+\begin{itemize}\itemsep=6pt
+\item \textbf{Variable splitting (PnP-DM).} Give each pull its own
+  variable: $x$ has to look like a digit, $z$ has to fit the data,
+  and a soft penalty keeps them close. Alternate. The data update can
+  use the full Jacobian via one Gauss-Newton solve, so it has real
+  teeth. \textit{Fixes: weak-data-step problem (DPS, DAPS).}
+\item \textbf{Class-conditional prior with classifier-free guidance.}
+  Train the diffusion model with the digit label as an extra input.
+  At inference, each chain is seeded to a specific class and uses CFG
+  to commit to that class instead of waiting for the data step to roll
+  it into a valley. \textit{Fixes: wrong-digit-basin problem (all four
+  early attempts).}
+\item \textbf{TV-regularized polish.} Replace the plain Newton polish
+  with a Newton step plus a smoothed total-variation gradient step at
+  every iteration. The TV term penalizes per-pixel variation, so the
+  polish cannot fit round-off noise as speckle. \textit{Fixes:
+  speckle-in-the-picture problem (base PnP-DM).}
 \end{itemize}
 
 \vspace{0.5em}
-The chain commits early to whatever upright digit shape is closest to
-the data, then spends the remaining steps polishing that wrong digit.
-DAPS already decouples the prior step from the data step, but its data
-step is still a sequence of small Langevin gradient updates, so it
-inherits the same weakness. The classifier and the template retrieval
-both run on top of a broken first stage, so they inherit its wrong
-digit.
-
-\vspace{0.5em}
-The fix has to give the data step real teeth: instead of a small
-gradient nudge at every iteration, solve a small optimization problem
-that uses the full Jacobian. That lets one update do the work of dozens
-of gradient steps and gives the data enough leverage to push the chain
-out of the wrong basin.
+The next slides develop each piece, then we put them together and look
+at the result.
 \end{frame}
 
 %==============================================================
-\begin{frame}{The fix: split the work between two variables}
+\begin{frame}{Piece 1 --- Variable splitting (PnP-DM)}
 \begin{columns}[T]
 \column{0.55\textwidth}
 \vspace{0.2em}
@@ -212,23 +210,20 @@ fit the data. The two pulls compromise on every step, and the smaller
 one loses.
 
 \vspace{0.5em}
-Instead, introduce a second variable. Call them $x$ and $z$. Give them
-separate jobs:
+Instead, introduce a second variable. Call them $x$ and $z$:
 
 \vspace{0.3em}
 \begin{itemize}\itemsep=3pt
-\item $x$ only has to look like a digit.
-\item $z$ only has to fit the measurements.
-\item A soft penalty keeps $z$ near $x$.
+\item $x$ only has to look like a digit (the prior touches it).
+\item $z$ only has to fit the measurements (the likelihood touches it).
+\item A soft penalty $\tfrac{1}{2\sigma_n^2}\|z-x\|^2$ keeps them close.
 \end{itemize}
 
 \vspace{0.5em}
 Then alternate. Update $z$ to fit the data. Update $x$ to look like a
-digit. Repeat. Each update does one thing well.
-
-\vspace{0.4em}
-This sampler is called PnP-DM (Wu et al., NeurIPS 2024). We run 80
-alternations per chain, 32 chains in parallel.
+digit. Repeat. Each update does one thing well. This sampler is
+called PnP-DM (Wu et al., NeurIPS 2024). We run 80 alternations per
+chain, 32 chains in parallel.
 
 \column{0.45\textwidth}
 \centering
@@ -323,252 +318,49 @@ small linear system in the update $\Delta$:
 \end{frame}
 
 %==============================================================
-\begin{frame}{One chain, six frames: noise becomes a 5}
-\centering
-\includegraphics[width=0.98\linewidth]{fig_denoising_progression.png}
-
-\vspace{0.8em}
-{\footnotesize
-\textbf{Reading left to right.} At iteration 1 the image is essentially
-random noise. By iteration 5 a digit shape is forming. By iteration 26
-the digit identity (a 5) is settled, though the strokes are still a bit
-smudged. By iteration 80 the chain has converged to a clean tilted 5
-with misfit around $10^{-7}$. Every other chain looks similar.}
-\end{frame}
-
-%==============================================================
-\begin{frame}{Same chain, animated: watch the digit class lock in}
-\begin{columns}[T]
-\column{0.40\textwidth}
-\centering
-\animategraphics[autoplay,loop,width=\linewidth]{8}{frames_competition/frame_}{0}{80}
-
-\column{0.60\textwidth}
-\vspace{0.1em}
-\footnotesize
-The filmstrip on the previous slide showed six time-points. Here is the
-same chain animated through all 80 iterations, run with the new
-class-conditional CFG sampler (chain seeded to class 5).
-
-\vspace{0.4em}
-\textbf{What to watch for.} In the first $\sim$ 5 iterations the image
-is still essentially noise. Around iteration 10 to 15 the
-\textbf{data step} (Gauss-Newton) has accumulated enough information
-about the voltages that the iterate starts to look like a coherent
-shape. By iteration 20 the digit class is locked in. From there on,
-the prior step polishes the strokes and the data step nudges the
-pixels for a tighter fit. The TV polish (a separate stage, not shown
-here) takes the final image from misfit $\sim 10^{-6}$ to
-$\sim 10^{-11}$.
-
-\vspace{0.4em}
-\textcolor{osuorange}{The digit identity is decided early. The rest is refinement.}
-\end{columns}
-\end{frame}
-
-%==============================================================
-\begin{frame}{Where each chain starts, and why answers can disagree}
-\footnotesize
-\textbf{Where does a chain start?} Not from the measurements. Each
-chain starts from a fresh draw of pure Gaussian noise:
-$x_0 \sim \mathcal{N}(0, I)$. That is just a $28 \times 28$ grid of
-random numbers (TV static). The measurements $y_{\text{obs}}$ enter
-only through the data step, which runs at every iteration. The data
-step pulls toward fitting $y_{\text{obs}}$. The prior step pulls
-toward looking like a digit. Together they convert the random noise
-into the recovered digit.
-
-\vspace{0.5em}
-\textbf{Why several different chains can give different digits.} The
-forward map is a $784 \to 1900$ blur. Two different digits can
-produce voltage readings that agree to many decimal places. So the
-question ``which digit is inside?'' does not have a unique answer
-from the readings alone. The posterior has \emph{several} valleys,
-one per plausible digit.
-
-\vspace{0.5em}
-A single chain commits to whichever valley its random starting noise
-rolls it into. Different chains, different starting noises, different
-valleys. With the base PnP-DM sampler, across 32 chains most land on
-the 5 valley (the correct one for this $y_{\text{obs}}$), a few land on
-the 8 valley. We pick the chain with the lowest data misfit. The 5
-wins every time.
-
-\vspace{0.4em}
-\centering
-\textcolor{osuorange}{The 32 chains are a safety net.
-The lowest-misfit chain wins the vote.}
-
-\vspace{0.2em}
-{\scriptsize\color{osugray}
-This is also why one held-out test (digit 3) recovers as a 5. That
-particular 3 and a particular 5 produce nearly identical voltage
-readings, so no method can tell them apart from the data alone. The
-class-conditional upgrade later in this talk gives the chain a way
-to commit to a class hypothesis directly, instead of waiting for the
-data step to roll it into a valley.}
-\end{frame}
-
-%==============================================================
-\begin{frame}{One more piece: rotation augmentation}
-\begin{columns}[T]
-\column{0.55\textwidth}
-\vspace{0.2em}
-\footnotesize
-The pretrained MNIST diffusion model has only seen upright digits
-during training. Our truth is a 5 tilted by about $7.5$ degrees. During
-PnP-DM the prior step keeps nudging back toward upright, while the data
-step pulls toward tilted. Without intervention the prior wins.
-
-\vspace{0.5em}
-The fix is to train the diffusion model on rotated copies of the MNIST
-digits. For the base prior we fine-tune the pretrained checkpoint for
-five epochs ($\sim 20$ minutes on a MacBook). For the new prior we
-retrain from scratch with rotation augmentation for 30 epochs ($\sim
-15$ minutes on a 5090).
-
-\vspace{0.5em}
-After this training, the model thinks tilted digits are just as normal
-as upright ones. The prior step stops fighting the data, and the chain
-converges to the truth.
-
-\column{0.45\textwidth}
-\centering
-\includegraphics[width=\linewidth]{fig10_pretrained_vs_finetuned.png}\\
-{\scriptsize\color{osugray} Top row: random digits from the pretrained
-model. Bottom row: random digits from the same model after the extra
-rotation training.}
-\end{columns}
-\end{frame}
-
-%==============================================================
-\begin{frame}{Finishing the job: a Newton-style polish}
+\begin{frame}{Piece 2 --- Class-conditional prior + classifier-free guidance}
 \begin{columns}[T]
 \column{0.50\textwidth}
-\vspace{0.1em}
-\footnotesize
-After PnP-DM the best chain has misfit about $1.8 \times 10^{-7}$.
-We know the digit is right. The rest is a local optimization on
-the pixels.
-
-\vspace{0.4em}
-Project 1's polish was gradient descent. It converges linearly, and
-the steps get tinier as we approach the optimum.
-
-\vspace{0.4em}
-We replace it with a Newton-style step that accounts for the curvature
-of the data-fit landscape. Each step roughly squares the error, so a
-handful of steps drops the misfit many orders of magnitude.
+\scriptsize
+\textbf{Train the prior on rotated MNIST with class labels.} A
+6-million-parameter UNet, trained from scratch on $[-15^\circ,
++15^\circ]$ rotated MNIST images paired with their digit class.
+EMA-weighted parameters during training. 30 epochs on a 5090
+($\sim 15$ minutes). The model now believes tilted digits are
+realistic and can render any specific class on demand.
 
 \vspace{0.3em}
-With this polish the \textbf{base pipeline} (rotation-aug DDPM +
-PnP-DM + Newton polish) ends at misfit about
-$\mathbf{5 \times 10^{-11}}$.
-
-\column{0.50\textwidth}
-\centering
-\includegraphics[width=\linewidth]{fig11_gd_vs_newton.png}\\
-{\scriptsize\color{osugray} GD zigzags; Newton jumps to the bottom.}
-\end{columns}
-\end{frame}
-
-%==============================================================
-\begin{frame}{The base pipeline got a 5, but the image had speckle}
-\begin{columns}[T]
-\column{0.50\textwidth}
-\vspace{0.1em}
-\footnotesize
-The base pipeline (everything we have shown so far) recovers a 5 at
-misfit around $5 \times 10^{-11}$. That is already much tighter than
-Project 1's $10^{-7}$, but the image had two visible problems.
-
-\vspace{0.4em}
-\begin{itemize}\itemsep=3pt
-\item \textbf{Stroke speckle.} Inside the 5 there are pixels darker
-  than they should be. The polish drove the data fit so hard it
-  picked up the round-off noise of the simulator.
-\item \textbf{Background haze.} The pixels outside the 5 are not
-  perfectly background. Same cause.
-\end{itemize}
-
-\vspace{0.4em}
-Lower misfit is not the same as a cleaner image. We needed to fix the
-image without throwing away the data fit.
-
-\column{0.50\textwidth}
-\centering
-\includegraphics[width=0.92\linewidth]{fig17_pre_vs_polish.png}\\[0.2em]
-{\scriptsize\color{osugray} For each prior, the pre-polish image is
-visibly cleaner than the polished image. The polish is over-fitting.}
-\end{columns}
-\end{frame}
-
-%==============================================================
-\begin{frame}{Three improvements we layered on top of PnP-DM}
-\footnotesize
-\begin{itemize}\itemsep=5pt
-\item \textbf{Improvement 1 --- TV-regularized polish.} Add a smoothed
-  total-variation penalty to the polish objective so the polish cannot
-  introduce per-pixel speckle even when it has the freedom to. Same
-  Gauss-Newton step, plus a small TV gradient step every iteration.
-\item \textbf{Improvement 2 --- bigger prior with EMA.} Train a
-  6-million-parameter UNet from scratch on rotated MNIST, with an
-  exponential-moving-average copy of the weights. EMA gives smoother
-  samples; the bigger model has more capacity to represent slanted
-  stroke styles.
-\item \textbf{Improvement 3 --- class-conditional prior with
-  classifier-free guidance.} Train the UNet with the digit label as an
-  extra input. At each denoising step, combine the conditional and
-  unconditional predictions: $\varepsilon = (1+w)\varepsilon_c -
-  w\,\varepsilon_u$ with $w=3$. Each chain commits to a digit class
-  early and stays there.
-\end{itemize}
-
-\vspace{0.5em}
-{\color{osugray}
-The first improvement changes the polish. The second and third change
-the prior. The data step (Gauss-Newton on the simulator) does not change.}
-\end{frame}
-
-%==============================================================
-\begin{frame}{Class-conditional prior + classifier-free guidance}
-\begin{columns}[T]
-\column{0.50\textwidth}
-\footnotesize
-For each class label $c \in \{0,1,\dots,9\}$ the trained UNet learns
-its own conditional distribution. During training, 10\% of the labels
-are replaced with a special ``unconditional'' label so the same
-network also learns the marginal distribution over all digits.
-
-\vspace{0.4em}
-At inference we combine the two predictions:
+\textbf{Classifier-free guidance.} During training, 10\% of labels are
+replaced by a special unconditional token, so the same network learns
+both $\varepsilon_\theta(x_t, t, c)$ and
+$\varepsilon_\theta(x_t, t, \varnothing)$. At inference we combine:
 \[
 \varepsilon_{\text{guided}}
-\;=\;
+=
 (1+w)\,\varepsilon_\theta(x_t, t, c)
-\;-\;
-w\,\varepsilon_\theta(x_t, t, \varnothing).
+-
+w\,\varepsilon_\theta(x_t, t, \varnothing),
 \]
-With $w=3$, samples are strongly class-faithful. We assign each of
-the 32 chains a target class label that cycles through $0\dots9$,
-so every digit gets at least three chains. The chain whose final
-misfit is lowest wins.
+with $w = 3$. Strong class commitment, no extra parameters.
 
-\vspace{0.4em}
-This is the standard CFG recipe (Ho and Salimans 2022). It gives the
-sampler the option to commit to a digit \emph{early}, instead of
-waiting to be pushed there by the data gradient.
+\vspace{0.3em}
+\textbf{32 chains, 10 class hypotheses.} Each chain is seeded to a
+target class label that cycles through $0,\dots,9$, so every digit
+gets at least three chains. The chain whose final misfit is lowest
+wins. The sampler can now commit to a digit \emph{early}, instead of
+waiting for the data gradient to roll it into a valley.
 
 \column{0.50\textwidth}
 \centering
 \includegraphics[width=\linewidth]{fig16_cond_samples.png}\\[0.2em]
 {\scriptsize\color{osugray} One unconditional sample per class from the
-trained model, $w=3$. Each digit is rendered in its own style.}
+trained class-conditional model with $w = 3$. Each digit comes out in
+its own slightly-tilted style.}
 \end{columns}
 \end{frame}
 
 %==============================================================
-\begin{frame}{Total-variation polish: keep the misfit, drop the speckle}
+\begin{frame}{Piece 3 --- Total-variation polish}
 \begin{columns}[T]
 \column{0.55\textwidth}
 \footnotesize
@@ -599,6 +391,80 @@ so the misfit never increases.
 {\scriptsize\color{osugray} The TV polish keeps the strokes clean and
 the background flat while still hitting low misfit.}
 \end{columns}
+\end{frame}
+
+%==============================================================
+\begin{frame}{One chain, six frames: noise becomes a 5}
+\centering
+\includegraphics[width=0.98\linewidth]{fig_denoising_progression.png}
+
+\vspace{0.8em}
+{\footnotesize
+\textbf{Reading left to right.} A single chain of the full method
+(class-conditional CFG sampler, target class 5). At iteration 1 the
+image is essentially random noise. By iteration 5 a digit shape is
+forming. By iteration 26 the digit identity is settled. By iteration
+80 the chain has converged to a clean tilted 5 with pre-polish misfit
+around $10^{-6}$. The TV polish then drives the misfit the rest of
+the way to $1.83 \times 10^{-11}$.}
+\end{frame}
+
+%==============================================================
+\begin{frame}{Same chain, animated: watch the digit class lock in}
+\begin{columns}[T]
+\column{0.40\textwidth}
+\centering
+\animategraphics[autoplay,loop,width=\linewidth]{8}{frames_competition/frame_}{0}{80}
+
+\column{0.60\textwidth}
+\vspace{0.1em}
+\footnotesize
+The same chain animated through all 80 iterations.
+
+\vspace{0.4em}
+\textbf{What to watch for.} In the first $\sim 5$ iterations the image
+is still essentially noise. Around iteration 10 to 15 the
+\textbf{data step} (Gauss-Newton) has accumulated enough information
+about the voltages that the iterate starts to look like a coherent
+shape. The class label $c = 5$ (via CFG) keeps the prior step pulling
+toward a 5, so the chain commits to the right digit early. By
+iteration 20 the digit class is locked in. From there on, the prior
+step polishes the strokes and the data step nudges the pixels for a
+tighter fit. The TV polish (a separate stage, not shown here) takes
+the final image from misfit $\sim 10^{-6}$ to $\sim 10^{-11}$.
+
+\vspace{0.4em}
+\textcolor{osuorange}{The digit identity is decided early. The rest is refinement.}
+\end{columns}
+\end{frame}
+
+%==============================================================
+\begin{frame}{Where each chain starts, and why we run 32 of them}
+\footnotesize
+\textbf{Where does a chain start?} Not from the measurements. Each
+chain starts from a fresh draw of pure Gaussian noise: $x_0 \sim
+\mathcal{N}(0, I)$. That is just a $28 \times 28$ grid of random
+numbers (TV static). The measurements $y_{\text{obs}}$ enter only
+through the data step, which runs at every iteration.
+
+\vspace{0.5em}
+\textbf{Why several different chains can give different digits.} The
+forward map is a $784 \to 1900$ blur. Two different digits can produce
+voltage readings that agree to many decimal places. The posterior has
+several valleys, one per plausible digit.
+
+\vspace{0.5em}
+\textbf{How CFG handles this.} Instead of letting the random starting
+noise decide which valley each chain rolls into, we \emph{seed} each
+chain to a target class label. With 32 chains and 10 classes, every
+digit gets at least three chains, and the chains targeting the right
+class have a strong head start at every denoising step. The chain
+whose final data misfit is lowest wins. The 5 wins every time.
+
+\vspace{0.5em}
+\centering
+\textcolor{osuorange}{32 chains $\times$ 10 class hypotheses
+is the safety net. The lowest-misfit chain wins.}
 \end{frame}
 
 %==============================================================
