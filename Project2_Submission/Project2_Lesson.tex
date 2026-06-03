@@ -57,7 +57,7 @@ By the end you should be able to say, in your own words, all of these:
 \end{enumerate}
 \end{quote}
 
-\tableofcontents
+{\small\setlength{\parskip}{0pt}\tableofcontents}
 \newpage
 
 %==============================================================
@@ -448,10 +448,14 @@ We never had to collect ``ground-truth pairs'' from somewhere; the
 forward chain manufactures them on demand.
 
 \begin{aside}
-The pretrained MNIST DDPM we use, \texttt{1aurent/ddpm-mnist} on
-Hugging Face, has about $1$ million internal weights and was trained
-this way on standard MNIST for a few hours on one GPU. We just
-downloaded it; we did not train it from scratch.
+The base prior in Lessons 18--35 is the pretrained MNIST DDPM
+\texttt{1aurent/ddpm-mnist} on Hugging Face (about $1$ million internal
+weights), trained this way on standard MNIST for a few hours on one GPU.
+We downloaded that one and fine-tuned it on rotated MNIST. In Lesson 39
+we train a bigger $6$-million-parameter UNet from scratch using exactly
+the loop above (with EMA weights), and in Lesson 40 a class-conditional
+variant. The training procedure is identical; only the architecture and
+the data pairing change.
 \end{aside}
 
 \section{Lesson 11: Tweedie's formula --- recovering the clean image from the noise guess}
@@ -1161,7 +1165,7 @@ next lesson.
 
 \section{Lesson 25: Gauss-Newton step 3 --- rearrange to a linear system}
 
-Take the equation from Lesson 22 and put all the $\Delta$ terms on
+Take the equation from the end of Lesson 24 and put all the $\Delta$ terms on
 the left, everything else on the right.
 
 Expand the first term:
@@ -1449,7 +1453,7 @@ then.)
 
 There's just one issue: we can't easily compute $(J^\top J)^{-1}$.
 Forming and inverting that matrix is slow and unstable. The fix is
-called conjugate gradient, which we'll cover in Lesson 31. First, let's
+called conjugate gradient, which we'll cover in Lesson 33. First, let's
 look at the contrast between GD and Newton on a picture.
 
 \section{Lesson 32: A picture of GD vs Newton}
