@@ -63,9 +63,11 @@ draw a fresh digit, but it does not know about our voltage readings.
 
 \vspace{0.6em}
 The rest of this talk is how we combined a diffusion model with the ERT
-measurements. The final misfit is
-\textcolor{osuorange}{$\mathbf{6.16 \times 10^{-13}}$}, recovering a
-tilted 5.
+measurements. The final pipeline uses a class-conditional diffusion
+prior with classifier-free guidance and a total-variation polish. The
+final misfit is
+\textcolor{osuorange}{$\mathbf{1.83 \times 10^{-11}}$}, recovering a
+clean tilted 5.
 \end{frame}
 
 %==============================================================
@@ -73,16 +75,16 @@ tilted 5.
 \centering
 \begin{tikzpicture}[node distance=0.4cm and 1.0cm, every node/.style={align=center}]
 \node[draw, rounded corners, fill=orange!15, minimum width=3.0cm, minimum height=1.2cm,
-      font=\footnotesize\bfseries] (A) {Stage A\\rotation-aug.\\DDPM (one time)};
+      font=\footnotesize\bfseries] (A) {Stage A\\class-cond.\\rotation-aug.\\DDPM};
 \node[draw, rounded corners, fill=orange!25, minimum width=3.0cm, minimum height=1.2cm,
-      right=of A, font=\footnotesize\bfseries] (B) {Stage B\\PnP-DM sampler\\32 chains};
+      right=of A, font=\footnotesize\bfseries] (B) {Stage B\\PnP-DM\\with CFG\\32 chains};
 \node[draw, rounded corners, fill=orange!40, minimum width=3.0cm, minimum height=1.2cm,
-      right=of B, font=\footnotesize\bfseries] (C) {Stage C\\Newton-style\\polish};
+      right=of B, font=\footnotesize\bfseries] (C) {Stage C\\TV-regularized\\polish};
 \draw[-{Latex[length=3mm]}, very thick, osuorange] (A) -- (B);
 \draw[-{Latex[length=3mm]}, very thick, osuorange] (B) -- (C);
-\node[below=0.4cm of A, font=\scriptsize, color=osugray] {teach the prior\\about tilted digits};
-\node[below=0.4cm of B, font=\scriptsize, color=osugray] {draw 32 candidate\\images, pick best};
-\node[below=0.4cm of C, font=\scriptsize, color=osugray] {drop misfit to\\machine precision};
+\node[below=0.4cm of A, font=\scriptsize, color=osugray] {teach the prior\\digit class + tilt};
+\node[below=0.4cm of B, font=\scriptsize, color=osugray] {draw 32 candidate\\images per class};
+\node[below=0.4cm of C, font=\scriptsize, color=osugray] {tighten fit without\\adding speckle};
 \end{tikzpicture}
 
 \vspace{1.5em}
@@ -118,68 +120,80 @@ Bottom: the network's clean-image guess at each.}
 \end{frame}
 
 %==============================================================
-\begin{frame}{What we tried first}
+\begin{frame}{What we tried first, and why none of it worked}
 \footnotesize
+\begin{columns}[T]
+\column{0.58\textwidth}
 
-\textbf{The idea.} Train a diffusion model on the 60{,}000 MNIST digits
-so it knows what handwritten digits look like. Then, instead of asking
-it to draw random digits, steer its drawing process at every step using
-the ERT measurements. The result should be a digit that looks realistic
-and matches the data.
+We ran four standard diffusion-based recipes before landing on the
+method in this talk. Each one steers a diffusion model with the ERT
+measurements in a different way.
 
-\vspace{0.4em}
-The steering works by asking, at every step, ``if this were the final
-image, how far off would the predicted voltages be from what we
-measured?'' Then nudge the image to reduce that mismatch.
+\vspace{0.3em}
+\begin{itemize}\itemsep=2pt
+\item \textbf{DPS} (Diffusion Posterior Sampling). At every denoising
+  step, nudge the image in the direction of the data gradient
+  $\nabla \log p(y\mid x)$. \textit{Result: 4 of 5 chains converged to
+  a 4. Wrong digit every time.}
+\item \textbf{DAPS} (Decoupled Annealing Posterior Sampling). The
+  diffusion model is responsible for class and shape; a separate
+  Langevin step is responsible for fitting the data. \textit{Result:
+  still a 4 most runs; a single 5 only when seeded carefully.}
+\item \textbf{DI-RTG v1} (DAPS warm-start + an MNIST classifier vote +
+  Levenberg-Marquardt polish). The classifier was supposed to break
+  the ambiguity. \textit{Result: classifier voted ``4'' too. Polish
+  drove a wrong-digit answer to high precision.}
+\item \textbf{DI-RTG v2} (DAPS warm-start + template retrieval from
+  the MNIST training set). \textit{Result: the closest template was
+  always upright, but the competition digit is tilted by 7.5 degrees.
+  Retrieved templates were the right digit but at the wrong pose, and
+  the polish could not unfold them.}
+\end{itemize}
 
-\vspace{0.4em}
-This is the standard recipe in the literature. It is called DPS, short
-for Diffusion Posterior Sampling.
-
-\vspace{0.4em}
-\textbf{What happened.} We ran this five separate times from different
-random starting noise.
-
-\vspace{0.5em}
-\begin{center}
-{\large\textcolor{osuorange}{\textbf{Four of the five runs agreed the digit is a 4.}}}
-\end{center}
-
-\vspace{0.2em}
+\column{0.42\textwidth}
 \centering
+\includegraphics[width=\linewidth]{dps_chains.png}\\
+{\scriptsize\color{osugray} The DPS run that started it all. Eight
+chains, each locking onto a wrong digit (3, 4, 6, 8). Not a 5 in sight.}
+
+\vspace{0.6em}
+\begin{center}
+{\footnotesize\textcolor{osuorange}{\textbf{Pattern.}}}\\
 {\scriptsize\color{osugray}
-Project 1 already showed the digit is a 5. So this approach gave us the
-wrong answer, consistently.}
+Every recipe that nudges the diffusion chain by a weak data gradient at
+each step commits to whichever upright digit shape is closest to the
+data, then refuses to leave that basin. The basin happened to be a 4.}
+\end{center}
+\end{columns}
 \end{frame}
 
 %==============================================================
-\begin{frame}{Why it got the wrong digit}
-\begin{columns}[T]
-\column{0.52\textwidth}
-\vspace{0.2em}
+\begin{frame}{Why those four approaches all failed in the same way}
 \footnotesize
-Two things broke at once.
+Two things broke at once, and every standard recipe inherits both
+problems.
 
-\vspace{0.4em}
+\vspace{0.5em}
 \begin{itemize}\itemsep=4pt
 \item The little nudge at each step is in the direction of the data
   gradient. That gradient is dominated by directions the boundary
-  sensors hardly see, so most of the nudge goes to waste.
-\item The drawing process only has about 100 steps. A hundred weak
+  sensors hardly see, so most of the nudge goes to waste. The piece of
+  the gradient that actually moves the digit toward the data is tiny.
+\item The denoising process only has about 100 steps. A hundred weak
   nudges are not enough to override the prior's pull toward the most
-  common-looking digit.
+  common-looking upright digit.
 \end{itemize}
 
-\vspace{0.4em}
-The chain commits early to whatever upright digit shape is closest
-to the data. For this measurement vector, that was a 4.
+\vspace{0.5em}
+The chain commits early to whatever upright digit shape is closest to
+the data, then spends the remaining steps polishing that wrong digit.
+DAPS, the classifier, and the template retrieval all sit on top of the
+same broken first stage, so they inherit the same wrong digit.
 
-\column{0.48\textwidth}
-\centering
-\includegraphics[width=\linewidth]{dps_chains.png}\\
-{\scriptsize\color{osugray} Eight chains from our DPS run, each
-locked onto a wrong digit (3, 4, 6, 8). No 5 in sight.}
-\end{columns}
+\vspace{0.5em}
+The fix has to be a sampler where the data step is \emph{strong} (not a
+small nudge), and the prior step is \emph{decoupled} from the data step
+so neither pulls the other off course.
 \end{frame}
 
 %==============================================================
@@ -428,18 +442,218 @@ Project 1's polish was gradient descent. It converges linearly, and
 the steps get tinier as we approach the optimum.
 
 \vspace{0.4em}
-Instead we use a Newton-style step, which accounts for the curvature
+We replace it with a Newton-style step that accounts for the curvature
 of the data-fit landscape. Each step roughly squares the error, so a
-handful of steps drops the misfit many orders of magnitude. We hit
-the float64 floor in about 25 seconds.
+handful of steps drops the misfit many orders of magnitude.
 
 \vspace{0.3em}
-\textcolor{osuorange}{\textbf{Final misfit: $\mathbf{6.16 \times 10^{-13}}$.}}
+With this polish the \textbf{base pipeline} (rotation-aug DDPM +
+PnP-DM + Newton polish) ends at misfit about
+$\mathbf{5 \times 10^{-11}}$.
 
 \column{0.50\textwidth}
 \centering
 \includegraphics[width=\linewidth]{fig11_gd_vs_newton.png}\\
 {\scriptsize\color{osugray} GD zigzags; Newton jumps to the bottom.}
+\end{columns}
+\end{frame}
+
+%==============================================================
+\begin{frame}{The base pipeline got a 5, but the image had speckle}
+\begin{columns}[T]
+\column{0.50\textwidth}
+\vspace{0.1em}
+\footnotesize
+The base pipeline (everything we have shown so far) recovers a 5 at
+misfit around $5 \times 10^{-11}$. That is already much tighter than
+Project 1's $10^{-7}$, but the image had two visible problems.
+
+\vspace{0.4em}
+\begin{itemize}\itemsep=3pt
+\item \textbf{Stroke speckle.} Inside the 5 there are pixels darker
+  than they should be. The polish drove the data fit so hard it
+  picked up the round-off noise of the simulator.
+\item \textbf{Background haze.} The pixels outside the 5 are not
+  perfectly background. Same cause.
+\end{itemize}
+
+\vspace{0.4em}
+Lower misfit is not the same as a cleaner image. We needed to fix the
+image without throwing away the data fit.
+
+\column{0.50\textwidth}
+\centering
+\includegraphics[width=0.92\linewidth]{fig17_pre_vs_polish.png}\\[0.2em]
+{\scriptsize\color{osugray} For each prior, the pre-polish image is
+visibly cleaner than the polished image. The polish is over-fitting.}
+\end{columns}
+\end{frame}
+
+%==============================================================
+\begin{frame}{Three improvements we layered on top of PnP-DM}
+\footnotesize
+\begin{itemize}\itemsep=5pt
+\item \textbf{Improvement 1 --- TV-regularized polish.} Add a smoothed
+  total-variation penalty to the polish objective so the polish cannot
+  introduce per-pixel speckle even when it has the freedom to. Same
+  Gauss-Newton step, plus a small TV gradient step every iteration.
+\item \textbf{Improvement 2 --- bigger prior with EMA.} Train a
+  6-million-parameter UNet from scratch on rotated MNIST, with an
+  exponential-moving-average copy of the weights. EMA gives smoother
+  samples; the bigger model has more capacity to represent slanted
+  stroke styles.
+\item \textbf{Improvement 3 --- class-conditional prior with
+  classifier-free guidance.} Train the UNet with the digit label as an
+  extra input. At each denoising step, combine the conditional and
+  unconditional predictions: $\varepsilon = (1+w)\varepsilon_c -
+  w\,\varepsilon_u$ with $w=3$. Each chain commits to a digit class
+  early and stays there.
+\end{itemize}
+
+\vspace{0.5em}
+{\color{osugray}
+The first improvement changes the polish. The second and third change
+the prior. The data step (Gauss-Newton on the simulator) does not change.}
+\end{frame}
+
+%==============================================================
+\begin{frame}{Class-conditional prior + classifier-free guidance}
+\begin{columns}[T]
+\column{0.50\textwidth}
+\footnotesize
+For each class label $c \in \{0,1,\dots,9\}$ the trained UNet learns
+its own conditional distribution. During training, 10\% of the labels
+are replaced with a special ``unconditional'' label so the same
+network also learns the marginal distribution over all digits.
+
+\vspace{0.4em}
+At inference we combine the two predictions:
+\[
+\varepsilon_{\text{guided}}
+\;=\;
+(1+w)\,\varepsilon_\theta(x_t, t, c)
+\;-\;
+w\,\varepsilon_\theta(x_t, t, \varnothing).
+\]
+With $w=3$, samples are strongly class-faithful. We assign each of
+the 32 chains a target class label that cycles through $0\dots9$,
+so every digit gets at least three chains. The chain whose final
+misfit is lowest wins.
+
+\vspace{0.4em}
+This is the standard CFG recipe (Ho and Salimans 2022). It gives the
+sampler the option to commit to a digit \emph{early}, instead of
+waiting to be pushed there by the data gradient.
+
+\column{0.50\textwidth}
+\centering
+\includegraphics[width=\linewidth]{fig16_cond_samples.png}\\[0.2em]
+{\scriptsize\color{osugray} One unconditional sample per class from the
+trained model, $w=3$. Each digit is rendered in its own style.}
+\end{columns}
+\end{frame}
+
+%==============================================================
+\begin{frame}{Total-variation polish: keep the misfit, drop the speckle}
+\begin{columns}[T]
+\column{0.55\textwidth}
+\footnotesize
+The Newton-style polish minimizes
+$\tfrac{1}{2}\norm{F(\sigma_{\text{bg}}+x) - y_{\text{obs}}}^2$. The TV
+polish adds a smoothed total-variation penalty:
+\[
+\tfrac{1}{2}\norm{F(\sigma_{\text{bg}}+x) - y_{\text{obs}}}^2
+\;+\;
+\tau \sum_{i,j} \sqrt{(\partial_x x)^2 + (\partial_y x)^2 + \epsilon^2}.
+\]
+\vspace{-0.4em}
+
+The second term counts the total horizontal and vertical pixel-to-pixel
+variation. Speckle adds a lot of variation; smooth strokes add little.
+At $\tau \approx 10^{-5}$ the TV term is small enough that the misfit
+still drops to the $10^{-11}$ regime, but large enough that the polish
+is no longer allowed to add per-pixel noise.
+
+\vspace{0.5em}
+Each polish iteration is one Newton step on the data term followed by
+one gradient step on the TV term. The line search still gates updates,
+so the misfit never increases.
+
+\column{0.45\textwidth}
+\centering
+\includegraphics[width=\linewidth]{fig15_tv_vs_lm.png}\\[0.1em]
+{\scriptsize\color{osugray} The TV polish keeps the strokes clean and
+the background flat while still hitting low misfit.}
+\end{columns}
+\end{frame}
+
+%==============================================================
+\begin{frame}{The 12-combination sweep}
+\begin{columns}[T]
+\column{0.42\textwidth}
+\footnotesize
+We tested all $3 \times 2 \times 2 = 12$ combinations:
+
+\vspace{0.4em}
+\begin{itemize}\itemsep=2pt
+\item \textbf{Prior:} base / bigger+EMA / class-conditional+CFG
+\item \textbf{Schedule:} geomspace / DAPS++ negative-rho
+\item \textbf{Polish:} Newton / TV-regularized
+\end{itemize}
+
+\vspace{0.5em}
+Two things popped out.
+
+\vspace{0.3em}
+\begin{itemize}\itemsep=2pt
+\item \textbf{TV polish beat Newton polish in every prior-schedule pair.}
+  Uniformly lower misfit \emph{and} cleaner image.
+\item \textbf{The class-conditional prior plus the geomspace schedule
+  plus the TV polish was the lowest misfit overall.} $1.83 \times
+  10^{-11}$, with a clean recognizable 5.
+\end{itemize}
+
+\vspace{0.4em}
+The bottom-right two cells (class-cond + neg-rho) actually converged
+to a class-6-shaped image. That is the schedule pushing the chain
+into a different mode --- the same ambiguity the four failed methods
+hit, surfacing again under a worse schedule.
+
+\column{0.58\textwidth}
+\centering
+\includegraphics[width=\linewidth]{fig14_sweep_grid.png}
+\end{columns}
+\end{frame}
+
+%==============================================================
+\begin{frame}{The winner: cond + geomspace + TV polish}
+\begin{columns}[T]
+\column{0.50\textwidth}
+\centering
+\includegraphics[width=\linewidth]{fig13_base_vs_winner.png}
+
+\column{0.50\textwidth}
+\vspace{0.4em}
+\footnotesize
+The left image is the base pipeline (PnP-DM + Newton polish), misfit
+$4.7 \times 10^{-11}$. Notice the stroke speckle and the background
+texture.
+
+\vspace{0.4em}
+The right image is the new pipeline (class-conditional PnP-DM with
+CFG + TV polish), misfit
+\textcolor{osuorange}{$\boldsymbol{1.83 \times 10^{-11}}$}. The
+strokes are smooth and the background is essentially flat.
+
+\vspace{0.4em}
+\textbf{Compared to Project 1's rotation-aware result on the same
+data:} our new pipeline is roughly $\mathbf{5{,}400 \times}$ tighter
+in misfit, and (qualitatively) a much sharper image.
+
+\vspace{0.4em}
+{\color{osugray} The improvement comes from the prior and the polish
+acting together. Each one alone gives a modest gain; together they
+remove both the speckle and the stroke darkness simultaneously.}
 \end{columns}
 \end{frame}
 
@@ -452,25 +666,25 @@ the float64 floor in about 25 seconds.
 \column{0.45\textwidth}
 \vspace{0.8em}
 \footnotesize
-The recovered digit is a \textbf{5}, tilted by about $7.5$ degrees. The
-final misfit is
-\textcolor{osuorange}{$\boldsymbol{6.16 \times 10^{-13}}$}.
+The recovered digit is a \textbf{5}, tilted by about $7.5$ degrees,
+with smooth strokes and a clean background. The final misfit is
+\textcolor{osuorange}{$\boldsymbol{1.83 \times 10^{-11}}$}.
 
 \vspace{0.5em}
-That is roughly $163{,}000$ times tighter than Project 1's
-rotation-aware result on the same data. The pipeline ran all the way
-down to the limit of double-precision arithmetic.
+That is roughly $\mathbf{5{,}400}$ times tighter than Project 1's
+rotation-aware result on the same data, recovered without a template
+database, without a classifier vote, and without any prior knowledge
+of the digit class.
 
 \vspace{0.5em}
-{\color{osugray} Most of that big multiplier comes from the polish, not
-from the diffusion. The diffusion did its job by putting us in the
-right digit basin. Once there, the Newton-style polish beat Project 1's
-gradient polish by about five orders of magnitude.}
+{\color{osugray} The diffusion does the heavy lifting: it puts the
+chain into the right digit basin via class conditioning, and the
+TV polish tightens the fit without amplifying noise.}
 \end{columns}
 \end{frame}
 
 %==============================================================
-\begin{frame}{Same method on 10 unseen digits: 9 out of 10}
+\begin{frame}{Held-out validation: 9 out of 10 on the base pipeline}
 \centering
 \includegraphics[width=0.95\linewidth]{validate_final.png}
 
@@ -478,11 +692,12 @@ gradient polish by about five orders of magnitude.}
 {\footnotesize
 Labels read \textbf{true to recovered}. For each test digit we
 synthesized fresh measurements, ran the full pipeline, and asked a
-classifier to read the recovered image. The one miss (3 read as 5) is a
-genuine ambiguity of the physics: that particular handwritten 3 has a
-curled bottom that produces voltage readings extremely close to those of
-certain 5s. The other nine cases polish to the same $10^{-12}$ regime
-as the competition vector.}
+classifier to read the recovered image. These ten cases were run on
+the \emph{base} pipeline. The one miss (3 read as 5) is a genuine
+ambiguity of the physics: that particular handwritten 3 has a curled
+bottom that produces voltage readings extremely close to those of
+certain 5s. The other nine cases polish to the same low-$10^{-11}$
+regime as the competition vector.}
 \end{frame}
 
 %==============================================================
@@ -511,20 +726,24 @@ data step do all the work.}
 \begin{frame}{Summary}
 \footnotesize
 \begin{itemize}\itemsep=4pt
-\item Project 2 forced us off template matching and onto a diffusion
-  prior. The first thing we tried, DPS, gave the wrong digit every time
-  because its data step is too weak.
+\item Four standard diffusion-based recipes (DPS, DAPS, classifier-vote,
+  template retrieval) all committed to the wrong digit because their
+  data step is too weak.
 \item Variable splitting separates the two jobs. PnP-DM replaces the
   gradient nudge with a Gauss-Newton solve, which commits the chain to
   the right digit in a few iterations. 32 chains in parallel cover the
   posterior modes.
-\item Rotation augmentation is a one-time twenty-minute fix that
-  unlocks the diffusion prior for tilted digits.
-\item A Newton-style polish replaces gradient descent at the endgame
-  and drops the misfit by about five extra orders of magnitude.
+\item Rotation augmentation is a one-time fix that unlocks the
+  diffusion prior for tilted digits.
+\item On top of the base PnP-DM sampler we layered three improvements:
+  TV-regularized polish, a bigger DDPM trained with EMA, and a
+  class-conditional DDPM with classifier-free guidance. We swept all
+  $12$ combinations to find the winner.
 \item \textbf{Result:} digit \textbf{5}, final misfit
-  \textcolor{osuorange}{$6.16 \times 10^{-13}$}, held-out
-  \textbf{9 out of 10}.
+  \textcolor{osuorange}{$\mathbf{1.83 \times 10^{-11}}$}
+  (about $5{,}400 \times$ tighter than Project 1's
+  rotation-aware result), with clean strokes and a flat background.
+  Base pipeline held-out: \textbf{9 out of 10}.
 \end{itemize}
 
 \vspace{0.6em}
@@ -544,10 +763,19 @@ Imaging Using Diffusion Models as Plug-and-Play Priors}, NeurIPS 2024.
 arXiv:2405.18782.
 \item \textbf{DDPM.} Ho, Jain, Abbeel, \emph{Denoising Diffusion
 Probabilistic Models}, NeurIPS 2020. arXiv:2006.11239.
+\item \textbf{Classifier-free guidance.} Ho, Salimans,
+\emph{Classifier-Free Diffusion Guidance}, NeurIPS workshop 2021.
+arXiv:2207.12598.
+\item \textbf{EMA for diffusion training.} Karras, Aittala, Aila,
+Laine, \emph{Elucidating the Design Space of Diffusion-Based Generative
+Models}, NeurIPS 2022 (EDM). arXiv:2206.00364.
+\item \textbf{Total-variation regularization.} Rudin, Osher, Fatemi,
+\emph{Nonlinear total variation based noise removal algorithms},
+Physica D, 1992.
 \item \textbf{Tweedie's formula.} Efron, \emph{Tweedie's Formula and
 Selection Bias}, JASA 2011.
 \item \textbf{Pretrained MNIST DDPM.} \texttt{1aurent/ddpm-mnist} on
-Hugging Face (the checkpoint we fine-tuned).
+Hugging Face (the checkpoint we fine-tuned for the base prior).
 \end{itemize}
 
 \textbf{Methods we tested or compared against}

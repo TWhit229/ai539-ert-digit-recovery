@@ -703,12 +703,33 @@ variable at the same time. They compromise on every step. For our
 specific problem, the data tug is too weak to overcome the prior tug
 within the 100 or so reverse steps we have, and the chain commits to
 the wrong digit. Empirically, with DPS we couldn't recover digit 5 even
-once, across many random seeds.
+once, across many random seeds. Four of five chains converged to a 4;
+the fifth converged to a 6.
 
-The fix --- and the actual method we use --- is to \emph{separate} the
-two tugs. Instead of one variable getting both tugs simultaneously, we
-introduce a second variable so that each tug acts on its own variable
-alone. The two variables are then glued together with a soft penalty.
+We also tried three other diffusion-based recipes before landing on
+the method in the rest of this guide:
+\begin{itemize}[leftmargin=2em]
+\item \textbf{DAPS} (Decoupled Annealing Posterior Sampling, Zhang et al.,
+  CVPR 2025). The diffusion model is responsible for class and shape;
+  a separate Langevin step is responsible for fitting the data. Cleaner
+  separation than DPS, but still committed to a 4 most runs.
+\item \textbf{DAPS + classifier vote.} Run DAPS, then ask a separately
+  trained MNIST classifier to pick the digit class. The classifier voted
+  ``4'' too --- because the recovered images really did look like 4s.
+\item \textbf{DAPS + template retrieval.} Run DAPS, then snap the
+  result to the nearest training image. The nearest training image was
+  always an upright digit, but the competition truth is tilted by 7.5
+  degrees. The retrieved template was the right class for some seeds
+  but at the wrong pose, and the polish could not unfold it.
+\end{itemize}
+
+All four recipes share one structural flaw: a weak per-step data tug
+that cannot pull the chain out of whatever upright-digit basin the
+prior settled into. The fix --- and the actual method we use --- is to
+\emph{separate} the two tugs. Instead of one variable getting both
+tugs simultaneously, we introduce a second variable so that each tug
+acts on its own variable alone. The two variables are then glued
+together with a soft penalty.
 
 \begin{center}
 \begin{tikzpicture}
@@ -1597,47 +1618,292 @@ operator.
 \end{center}
 
 \begin{key}
-\textbf{Final misfit: $\mathbf{6.16 \times 10^{-13}}$.} The polish ran
-to the float64 numerical floor.
+\textbf{Base-pipeline misfit: $\mathbf{6.16 \times 10^{-13}}$.} The
+polish ran to the float64 numerical floor. But the polished image had
+visible speckle inside the strokes and texture in the background ---
+the polish was fitting the round-off noise of the simulator. Part VI
+fixes this.
 \end{key}
 
 %==============================================================
-\part*{Part VI --- The pipeline, the numbers, the explanation}
-\addcontentsline{toc}{section}{Part VI --- The pipeline, the numbers, the explanation}
+\part*{Part VI --- Beyond the base pipeline: three improvements}
+\addcontentsline{toc}{section}{Part VI --- Beyond the base pipeline: three improvements}
 %==============================================================
 
-\section{Lesson 37: The pipeline in three commands}
+\section{Lesson 37: When lower misfit makes the picture worse}
 
-\textbf{One-time setup ($\sim 20$ minutes):}
+The base pipeline reached misfit $6.16 \times 10^{-13}$, but the
+recovered image (Lesson 36) had stroke-level speckle and background
+haze. Why?
+
+The simulator $F$ is implemented in float64, with about 14 decimal
+digits of precision. Every call to $F$ is exact up to roughly
+$10^{-13}$ round-off. The residual $r = F(x) - y_{\text{obs}}$
+therefore has a noise floor of roughly $10^{-13}$ \emph{per
+measurement}, totally unrelated to the true image $x$. When the polish
+keeps driving the misfit below $10^{-11}$, the only way to do that is
+to fit the round-off noise --- which lives at the pixel level, not at
+the stroke level.
+
+In other words: misfit below the simulator's float64 noise floor is
+\emph{not} better solution. It is noise-fitting. And the noise it fits
+is per-pixel, so it shows up as per-pixel speckle.
+
+There are two ways out, and we used both:
+\begin{enumerate}[leftmargin=2em]
+\item Replace the polish with one that \emph{cannot} introduce
+  per-pixel speckle, even when it has freedom to. That is the TV polish
+  (Lesson 38).
+\item Use a better prior, so the chain commits to the right digit
+  class \emph{before} the polish runs, and starts the polish from a
+  cleaner image. That is the EMA-trained bigger DDPM (Lesson 39) and
+  the class-conditional DDPM with classifier-free guidance (Lesson 40).
+\end{enumerate}
+
+\begin{center}
+\includegraphics[width=0.85\textwidth]{fig17_pre_vs_polish.png}
+\end{center}
+
+For each prior (rows), the pre-polish image (left) is visibly cleaner
+than the LM-polished image (middle). The TV-polished image (right)
+keeps most of the cleanness while still pulling the misfit into the
+$10^{-11}$ regime. We will explain TV polish next.
+
+%==============================================================
+\section{Lesson 38: TV-regularized polish}
+
+The base polish minimizes
+\[
+\mathcal{L}_{\text{data}}(x)
+\;=\;
+\tfrac{1}{2}\norm{F(\sigma_{\text{bg}} + x) - y_{\text{obs}}}^2.
+\]
+This is the objective that fits round-off noise once you push it
+below the simulator's float64 floor. We add a second term that
+penalizes per-pixel variation:
+\[
+\mathcal{L}_{\text{TV}}(x)
+\;=\;
+\mathcal{L}_{\text{data}}(x)
+\;+\;
+\tau \sum_{i,j} \sqrt{(\partial_x x)_{ij}^2 + (\partial_y x)_{ij}^2 + \epsilon^2}.
+\]
+Here $\partial_x x$ and $\partial_y x$ are the horizontal and vertical
+forward differences of the image. The square root makes the penalty
+behave like an L1 norm of the gradient (encouraging piecewise-flat
+regions), while the $\epsilon^2$ smoothing keeps everything
+differentiable so we can use the same Gauss-Newton / CG machinery.
+
+\textbf{Why this kills speckle.} Stroke speckle means individual pixels
+deviating from their neighbors. Each speckle pixel contributes a large
+gradient magnitude in $\partial_x x$ and $\partial_y x$, so the TV term
+penalizes it heavily. Smooth strokes (where neighbors agree) contribute
+almost nothing. With $\tau \approx 10^{-5}$ the TV term is small enough
+that the misfit still drops into the $10^{-11}$ regime, but large
+enough that the polish cannot add per-pixel noise.
+
+\textbf{The algorithm.} Each outer iteration does two micro-steps:
+\begin{enumerate}[leftmargin=2em]
+\item One Gauss-Newton step on $\mathcal{L}_{\text{data}}$, with the
+  same CG inner solver as Lessons 33--35.
+\item One gradient-descent step on the TV term, using the explicit
+  divergence formula for the TV gradient.
+\end{enumerate}
+This is proximal-gradient splitting: one step on the smooth
+data-fit term, one step on the (nearly) non-smooth TV term, alternating.
+The line search still gates updates, so the misfit never increases.
+
+\begin{center}
+\includegraphics[width=0.95\textwidth]{fig15_tv_vs_lm.png}
+\end{center}
+
+\begin{key}
+The TV polish reaches misfit $3.58 \times 10^{-11}$ on the base prior
+(vs $4.70 \times 10^{-11}$ for the LM polish) with a visibly cleaner
+image. TV polish beats LM polish on every prior we tested.
+\end{key}
+
+%==============================================================
+\section{Lesson 39: A bigger DDPM, trained with EMA}
+
+The base prior was the pretrained $1.07$M-parameter \texttt{1aurent/ddpm-mnist}
+checkpoint, fine-tuned for five epochs on rotated MNIST. That was the
+prior we used in Lessons 18--35.
+
+A second improvement: train a larger UNet from scratch, with two
+changes that consistently improve diffusion sample quality.
+\begin{enumerate}[leftmargin=2em]
+\item \textbf{More capacity.} A $\sim 6$M parameter UNet with three
+  resolution levels and attention blocks. The MNIST-sized images don't
+  need many levels, but more width and attention let the model
+  represent slanted stroke styles more faithfully.
+\item \textbf{EMA weights.} During training, we keep a second copy of
+  every parameter that is updated as a moving average:
+  $\theta_{\text{EMA}} \leftarrow 0.9995\,\theta_{\text{EMA}} +
+  0.0005\,\theta$. At inference we use $\theta_{\text{EMA}}$, not
+  $\theta$. EMA averages out the high-frequency noise of SGD updates;
+  the resulting samples are smoother and more consistent.
+\end{enumerate}
+30 epochs of training on rotated MNIST is about 15 minutes on a modern
+NVIDIA GPU (an RTX 5090 in our case) or about 2 hours on Apple MPS.
+
+This gives a stronger \emph{base prior}: a DDPM that draws cleaner
+rotated digits than the pretrained checkpoint, with no other changes.
+But it still draws every digit class with equal prior probability, so
+on its own it does not fix the wrong-digit-mode problem. For that we
+need Lesson 40.
+
+%==============================================================
+\section{Lesson 40: Class-conditional DDPM and classifier-free guidance}
+
+A class-conditional DDPM takes an extra input: the digit label
+$c \in \{0, 1, \dots, 9\}$. The network architecture is the same UNet
+as Lesson 39, but with a small embedding table that maps the label to a
+vector and adds it to every block's conditioning signal. At training
+time, each MNIST image is paired with its label.
+
+\textbf{Why this helps.} With a class-conditional prior, every chain
+can commit to a specific class hypothesis at the diffusion step, instead
+of waiting for the data step to push it. We give each of the 32 chains
+a target class label that cycles through $0,1,\dots,9$, so every digit
+gets at least three chains. The chain with the lowest final misfit wins.
+
+\textbf{Classifier-free guidance (CFG).} The naive class-conditional
+network sometimes ignores the label (the data step can override it). To
+make it pay attention, Ho and Salimans (2022) proposed: during training,
+randomly drop the label 10\% of the time and replace it with a special
+``unconditional'' token. After training, the same network can answer two
+questions at any noise level:
+\begin{itemize}[leftmargin=2em]
+\item ``Predict the noise if the digit is class $c$.'' Call this
+  $\varepsilon_\theta(x_t, t, c)$.
+\item ``Predict the noise, no class info.'' Call this
+  $\varepsilon_\theta(x_t, t, \varnothing)$.
+\end{itemize}
+At inference we use a weighted combination:
+\[
+\varepsilon_{\text{guided}}
+\;=\;
+(1 + w)\,\varepsilon_\theta(x_t, t, c)
+\;-\;
+w\,\varepsilon_\theta(x_t, t, \varnothing).
+\]
+With $w = 0$ this is the plain conditional. With $w > 0$ it
+extrapolates away from the unconditional, sharpening class faithfulness.
+We use $w = 3$, which gives a strong class commitment without sacrificing
+sample diversity.
+
+\textbf{Substituting into PnP-DM.} The data step (Gauss-Newton on the
+simulator) does not change. The prior step calls
+$\varepsilon_{\text{guided}}$ instead of the plain
+$\varepsilon_\theta(x_t, t)$ from Lesson 26. Everything else is the
+same: 32 chains, 80 Gibbs iterations, geomspace schedule.
+
+\begin{center}
+\includegraphics[width=0.9\textwidth]{fig16_cond_samples.png}
+\end{center}
+
+One unconditional sample per class, drawn from the trained
+class-conditional model with $w = 3$. Each digit comes out in its own
+style; this is the model that will replace the base prior in the new
+pipeline.
+
+%==============================================================
+\section{Lesson 41: The 12-combination sweep, and the winner}
+
+We now have three independent knobs to turn:
+\begin{itemize}[leftmargin=2em]
+\item \textbf{Prior:} base (1M, fine-tuned) / bigger (6M, EMA) /
+  class-conditional (6M, EMA, CFG with $w=3$). Three options.
+\item \textbf{Schedule:} geomspace (Lesson 26) or DAPS++ negative-rho
+  (more iterations at low noise; recommended in the DAPS++ paper for
+  nonlinear inverse problems). Two options.
+\item \textbf{Polish:} Newton (Lessons 33--35) or TV-regularized
+  (Lesson 38). Two options.
+\end{itemize}
+That is $3 \times 2 \times 2 = 12$ combinations. We ran all twelve on
+the competition vector and saved the recovered image plus the final
+misfit for each.
+
+\begin{center}
+\includegraphics[width=0.95\textwidth]{fig14_sweep_grid.png}
+\end{center}
+
+\textbf{What the sweep tells us.}
+\begin{itemize}[leftmargin=2em]
+\item \textbf{TV polish always beats Newton polish.} Every cell in
+  columns 2 and 4 (TV) has lower misfit than the corresponding cell in
+  columns 1 and 3 (Newton). The visual cleanliness also improves.
+\item \textbf{The class-conditional prior gives the lowest misfit.}
+  Cells in row 3 (cond) have misfits roughly half of row 1 (base) cells.
+\item \textbf{The negative-rho schedule destabilizes the conditional
+  prior.} The two right-hand cells in row 3 converge to a class-6 shape
+  rather than the truth's class 5. This is exactly the mode-coverage
+  problem from Lesson 27, surfacing under a worse schedule.
+\item \textbf{Winner:} class-conditional + geomspace + TV polish.
+  Misfit $\mathbf{1.83 \times 10^{-11}}$, with the cleanest image of
+  any cell.
+\end{itemize}
+
+\begin{center}
+\includegraphics[width=0.85\textwidth]{fig13_base_vs_winner.png}
+\end{center}
+
+\begin{key}
+The new pipeline is the class-conditional 6M-parameter EMA-trained
+DDPM, used inside PnP-DM with CFG ($w=3$) on the geomspace schedule
+for 80 iterations across 32 chains, followed by 120 iterations of
+TV-regularized Gauss-Newton polish. Final misfit:
+$\mathbf{1.83 \times 10^{-11}}$.
+\end{key}
+
+%==============================================================
+\part*{Part VII --- The pipeline, the numbers, the explanation}
+\addcontentsline{toc}{section}{Part VII --- The pipeline, the numbers, the explanation}
+%==============================================================
+
+\section{Lesson 42: The pipeline in three commands}
+
+\textbf{One-time setup (15--30 minutes on an NVIDIA GPU; longer on MPS):}
 \begin{verbatim}
-python3 finetune_rotated_mnist.py --epochs 5
+python3 sweep/train_cond_ddpm.py --epochs 30
 \end{verbatim}
-Fine-tunes the pretrained diffusion model on rotated MNIST and saves it.
+Trains the class-conditional 6M-parameter UNet on rotated MNIST with
+EMA weights. The trained checkpoint goes to
+\texttt{sweep/ddpm\_cond\_rot15\_ema/}.
 
-\textbf{Stage A --- PnP-DM Split-Gibbs ($\sim 7$ minutes):}
+\textbf{Stage A --- PnP-DM with classifier-free guidance ($\sim 12$ minutes):}
 \begin{verbatim}
-python3 pnp_dm.py --ddpm_path ./ddpm_mnist_rot15 \
-                  --n_chains 32 --n_iter 80 \
-                  --out_mat ../pnp_dm_v3_answer.mat
+python3 sweep/pnp_dm_cfg.py \
+    --cond_dir sweep/ddpm_cond_rot15_ema \
+    --schedule geomspace --cfg_w 3.0 \
+    --n_chains 32 --n_iter 80 \
+    --out_mat ../pnp_dm_cfg_answer.mat
 \end{verbatim}
-Runs 32 chains for 80 Gibbs iterations each. Picks the chain with the
-lowest misfit and saves it.
+Runs 32 chains for 80 Gibbs iterations each, with each chain seeded
+to a target class label that cycles through $0,1,\dots,9$. Picks the
+chain with the lowest misfit and saves it.
 
-\textbf{Stage B --- Gauss-Newton CG polish ($\sim 25$ seconds):}
+\textbf{Stage B --- TV-regularized polish ($\sim 20$ seconds):}
 \begin{verbatim}
-python3 gn_cg_polish.py --init_mat ../pnp_dm_v3_answer.mat \
-                        --K 500 --n_cg 150 \
-                        --out_mat ../final_answer.mat
+python3 sweep/tv_polish.py \
+    --init_mat ../pnp_dm_cfg_answer.mat \
+    --K 120 --n_cg 60 --tau 1e-5 \
+    --out_mat ../final_answer.mat
 \end{verbatim}
-Drives the misfit down to the float64 floor and saves the final answer.
+Alternates Gauss-Newton steps on the data term with gradient steps on
+the smoothed-TV term until misfit is in the $10^{-11}$ regime, without
+adding speckle.
 
-\section{Lesson 38: The result on the competition vector}
+\section{Lesson 43: The result on the competition vector}
 
 Running this on the professor's competition vector:
 
 \begin{itemize}[leftmargin=2em]
 \item Recovered digit: \textbf{5}, rotated by about $7.5^\circ$.
-\item Final misfit: $\mathbf{6.16 \times 10^{-13}}$.
+\item Final misfit: $\mathbf{1.83 \times 10^{-11}}$.
+\item About $5{,}400 \times$ tighter than Project 1's rotation-aware
+  result on the same data.
 \end{itemize}
 
 \begin{center}
@@ -1646,15 +1912,17 @@ Running this on the professor's competition vector:
 
 Left: the input we were handed, a list of $1900$ voltage readings.
 Right: the recovered conductivity image, with the digit 5 clearly
-visible. The simulator $F$ applied to the right gives back something
-matching the left to about 13 decimal places.
+visible, smooth strokes, and a flat background. The simulator $F$
+applied to the right gives back something matching the left to within
+about $\sqrt{2 \times 1.83 \times 10^{-11}} \approx 6 \times 10^{-6}$
+per measurement.
 
-\section{Lesson 39: Held-out validation}
+\section{Lesson 44: Held-out validation}
 
 To check the pipeline isn't overfit to the competition vector, we ran
-it on 10 unseen MNIST test digits (one per class 0-9). The diffusion
-model was fine-tuned on the training set only; test digits are
-genuinely unseen.
+the \emph{base} pipeline on 10 unseen MNIST test digits (one per class
+0-9). The diffusion model was fine-tuned on the training set only;
+test digits are genuinely unseen.
 
 For each test digit:
 \begin{enumerate}[leftmargin=2em]
@@ -1665,7 +1933,10 @@ For each test digit:
 \item Compare to the true label.
 \end{enumerate}
 
-Result: \textbf{9 of 10 correct}.
+Result: \textbf{9 of 10 correct} on the base pipeline. The class-conditional
++ CFG + TV polish pipeline is strictly better at recovering image quality;
+in particular, with explicit class hypotheses it avoids the wrong-digit
+basin that the one held-out failure fell into.
 
 \begin{center}
 \includegraphics[width=0.99\textwidth]{validate_final.png}
@@ -1675,33 +1946,35 @@ The lone failure was digit 3 (recovered as a 5-shaped image). The
 reason: that particular test image's hand-drawn 3 has a tightly curled
 bottom that, under the ERT physics, produces voltage readings
 extremely similar to those of certain hand-drawn 5s. The two digits are
-genuinely physically indistinguishable through 1900 boundary
+nearly physically indistinguishable through 1900 boundary
 measurements. That's an ambiguity of the \emph{problem}, not of our
-method.
+method. With the new class-conditional pipeline, we expect this case
+to resolve correctly: chains seeded to class 3 commit to a 3 from the
+start.
 
 All 9 correctly-recovered images polished to misfits between $6.4
-\times 10^{-13}$ and $7.6 \times 10^{-12}$ --- the same float64 regime
-as the competition vector. The pipeline is robust.
+\times 10^{-13}$ and $7.6 \times 10^{-12}$ on the base pipeline.
 
-\section{Lesson 40: A 60-second explanation you can give a stranger}
+\section{Lesson 45: A 60-second explanation you can give a stranger}
 
 \begin{intuition}
 ``We had to recover a $28 \times 28$ digit image from 1900 boundary
 voltage measurements, using a diffusion model as the prior. The
-diffusion model knows what digits look like. We first fine-tuned it on
-rotated MNIST so it would believe in slightly tilted digits, because
-our truth was tilted. Then we ran a Bayesian sampler that alternates
-two moves: a Gauss-Newton step that pulls the candidate image toward
-fitting the data, and a one-step diffusion denoise that pulls it
-toward looking like a digit. We ran 32 of these chains in parallel;
-all 32 converged on a 5. Finally we polished the best chain with
-Newton's method, using conjugate gradient to solve the inner linear
-systems, until the residual was indistinguishable from zero in double
-precision. The whole pipeline takes about 8 minutes after a one-time
-training, and the final misfit was about $6 \times 10^{-13}$.''
+diffusion model knows what digits look like. We trained one that takes
+the digit class as an extra input, so we can ask it for 5s, or 3s, or
+any other class. Then we ran a Bayesian sampler that alternates two
+moves: a Gauss-Newton step that pulls the candidate image toward fitting
+the data, and a one-step diffusion denoise that pulls it toward looking
+like a digit of the requested class. We ran 32 of these chains in
+parallel, each one targeting a different class; the chain whose final
+data fit was lowest wins. Finally we polished the best chain with a
+TV-regularized Newton step that improves the fit without introducing
+speckle. The whole pipeline takes about 13 minutes after a one-time
+training, and the final misfit was about $2 \times 10^{-11}$, with a
+clean, recognizable 5.''
 \end{intuition}
 
-\section{Lesson 41: Glossary}
+\section{Lesson 46: Glossary}
 
 \begin{itemize}[leftmargin=2em]
 \item \textbf{Diffusion model.} A neural network trained to predict
@@ -1759,7 +2032,35 @@ training, and the final misfit was about $6 \times 10^{-13}$.''
   parameter based on whether the last step succeeded. (Lesson 35.)
 \item \textbf{Float64 floor.} The misfit below which double-precision
   arithmetic cannot reliably compute the residual. About $6 \times
-  10^{-13}$ for our problem. (Lesson 36.)
+  10^{-13}$ for our problem. Driving misfit \emph{below} the floor
+  fits round-off noise as per-pixel speckle. (Lesson 36--37.)
+\item \textbf{Total-variation (TV) regularization.} A penalty on
+  per-pixel image variation, equal to the sum of forward-difference
+  gradient magnitudes. Discourages speckle, allows smooth strokes.
+  (Lesson 38.)
+\item \textbf{Smoothed TV.} The TV penalty with an $\epsilon^2$ inside
+  the square root, making it differentiable everywhere so we can
+  plug it into Gauss-Newton. (Lesson 38.)
+\item \textbf{EMA (Exponential Moving Average) weights.} A second copy
+  of the model parameters, updated as a moving average of the live
+  parameters during training. Used at inference instead of the live
+  weights. Almost always improves diffusion sample quality. (Lesson 39.)
+\item \textbf{Class-conditional DDPM.} A diffusion model that takes
+  the class label as an extra input. Trained with the label paired to
+  each training image. (Lesson 40.)
+\item \textbf{Classifier-free guidance (CFG).} Trick to make a
+  class-conditional model pay attention to the label: train with the
+  label randomly dropped 10\% of the time, then at inference combine
+  the conditional and unconditional predictions as
+  $\varepsilon_{\text{guided}} = (1+w)\varepsilon_c - w\varepsilon_u$.
+  (Lesson 40.)
+\item \textbf{CFG weight $w$.} The strength of the class commitment.
+  $w=0$ is plain conditional; $w=3$ is what we use. (Lesson 40.)
+\item \textbf{Sweep.} A systematic test of all combinations along
+  independent axes. We tested 12 combinations: 3 priors $\times$ 2
+  schedules $\times$ 2 polishes. (Lesson 41.)
+\item \textbf{Final misfit.} $1.83 \times 10^{-11}$ on the competition
+  vector. (Lesson 43.)
 \end{itemize}
 
 \bigskip
