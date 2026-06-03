@@ -88,8 +88,10 @@ clean tilted 5.
 \end{tikzpicture}
 
 \vspace{1.5em}
-Stage A is a one-time setup. After that, every run goes through Stage B
-and Stage C. Total wall time on a MacBook is about eight minutes.
+Stage A is a one-time setup ($\sim 15$ min on a 5090, longer on MPS).
+After that, every run goes through Stage B and Stage C. Total
+per-run wall time is about $\sim 12$ minutes on a MacBook, about
+$\sim 2$ minutes on a 5090.
 \end{frame}
 
 %==============================================================
@@ -606,26 +608,31 @@ diffusion prior and the Gauss-Newton data step do all the work.}
 \begin{frame}{Summary}
 \footnotesize
 \begin{itemize}\itemsep=4pt
-\item Four standard diffusion-based recipes (DPS, DAPS, classifier-vote,
-  template retrieval) all committed to the wrong digit because their
-  data step is too weak.
-\item Variable splitting separates the two jobs and the Gauss-Newton
-  solve gives the data step real teeth, so it can push the chain out
-  of a wrong-digit basin. 32 parallel chains cover the posterior modes.
-\item Rotation augmentation is a one-time fix that unlocks the
-  diffusion prior for tilted digits.
-\item On top of the base PnP-DM sampler we layered three improvements:
-  TV-regularized polish, a bigger DDPM trained with EMA, and a
-  class-conditional DDPM with classifier-free guidance. We swept all
-  $12$ combinations to find the winner.
+\item Five standard diffusion-based recipes failed in two distinct
+  ways. DPS, DAPS, classifier-vote, and template retrieval all
+  committed to the wrong digit because their data step is too weak.
+  Base PnP-DM + Newton polish picked the right digit but produced a
+  speckled picture from over-fitting round-off noise.
+\item Our method is three pieces working together:
+  \textbf{(1) variable splitting + Gauss-Newton}, which gives the
+  data step real teeth and pushes the chain out of wrong-digit basins;
+  \textbf{(2) class-conditional prior with classifier-free guidance},
+  which lets us run 32 chains seeded to 10 different class hypotheses
+  instead of relying on the data step to roll each chain into a valley;
+  \textbf{(3) TV-regularized polish}, which tightens the data fit
+  without amplifying per-pixel round-off as speckle.
+\item We validated by sweeping all $3 \times 2 \times 2 = 12$
+  combinations of prior, schedule, and polish on the competition
+  vector. Class-conditional + geomspace + TV polish was the
+  lowest-misfit combination AND had the cleanest image.
 \item \textbf{Result:} digit \textbf{5}, final misfit
   \textcolor{osuorange}{$\mathbf{1.83 \times 10^{-11}}$}
   (about $5{,}400 \times$ tighter than Project 1's
   rotation-aware result), with clean strokes and a flat background.
-  Base pipeline held-out: \textbf{9 out of 10}.
+  Held-out (base pipeline): \textbf{9 out of 10}.
 \end{itemize}
 
-\vspace{0.6em}
+\vspace{0.4em}
 \begin{center}
 {\large\textcolor{osuorange}{\textbf{Thank you. Questions?}}}
 \end{center}
