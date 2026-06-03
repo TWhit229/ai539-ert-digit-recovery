@@ -347,17 +347,19 @@ with misfit around $10^{-7}$. Every other chain looks similar.}
 \vspace{0.1em}
 \footnotesize
 The filmstrip on the previous slide showed six time-points. Here is the
-same chain animated through all 80 iterations (a chain from the base
-PnP-DM sampler).
+same chain animated through all 80 iterations, run with the new
+class-conditional CFG sampler (chain seeded to class 5).
 
 \vspace{0.4em}
 \textbf{What to watch for.} In the first $\sim$ 5 iterations the image
 is still essentially noise. Around iteration 10 to 15 the
 \textbf{data step} (Gauss-Newton) has accumulated enough information
 about the voltages that the iterate starts to look like a coherent
-shape. By iteration 20 the digit class is locked in: this chain will
-be a 5, not an 8 or a 3. From there on, the prior step polishes the
-strokes and the data step nudges the pixels for a tighter fit.
+shape. By iteration 20 the digit class is locked in. From there on,
+the prior step polishes the strokes and the data step nudges the
+pixels for a tighter fit. The TV polish (a separate stage, not shown
+here) takes the final image from misfit $\sim 10^{-6}$ to
+$\sim 10^{-11}$.
 
 \vspace{0.4em}
 \textcolor{osuorange}{The digit identity is decided early. The rest is refinement.}
@@ -725,12 +727,13 @@ regime as the competition vector.}
 \vspace{0.8em}
 {\footnotesize
 Three different held-out test images, three independent chains from
-the base PnP-DM sampler. Each chain starts from its own fresh Gaussian
+the new class-conditional CFG sampler (each chain seeded to its
+target class: 1, 7, 8). Each chain starts from its own fresh Gaussian
 noise. Notice the common pattern: in the first $\sim 15$ iterations
 the chain commits to a digit class, and the remaining $\sim 65$
-iterations sharpen the strokes and drive the misfit down. There is no
-template database anywhere in the pipeline. The diffusion prior and
-the Gauss-Newton data step do all the work.}
+iterations sharpen the strokes and drive the misfit down. There is
+no template database anywhere in the pipeline. The class-conditional
+diffusion prior and the Gauss-Newton data step do all the work.}
 \end{frame}
 
 %==============================================================
