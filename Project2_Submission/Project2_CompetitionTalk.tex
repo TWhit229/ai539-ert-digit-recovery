@@ -402,13 +402,14 @@ the background flat while still hitting low misfit.}
 
 \vspace{0.8em}
 {\footnotesize
-\textbf{Reading left to right.} A single chain of the full method
-(class-conditional CFG sampler, target class 5). At iteration 1 the
-image is essentially random noise. By iteration 5 a digit shape is
-forming. By iteration 26 the digit identity is settled. By iteration
-80 the chain has converged to a clean tilted 5 with pre-polish misfit
-around $10^{-6}$. The TV polish then drives the misfit the rest of
-the way to $1.83 \times 10^{-11}$.}
+\textbf{Reading left to right.} The winning chain (the one with the
+lowest pre-polish misfit) out of 32 cond+CFG chains, seeded to class
+$c = 5$. At iteration 1 the image is mostly noise with a 5-ish shape
+already forming. By iteration 5 the 5 is clearly visible. By iteration
+26 the strokes have sharpened. By iteration 80 the chain has converged
+to a clean tilted 5 with pre-polish misfit $5.9 \times 10^{-7}$. The
+TV polish then drives the misfit the rest of the way down to
+$1.83 \times 10^{-11}$.}
 \end{frame}
 
 %==============================================================
@@ -421,19 +422,17 @@ the way to $1.83 \times 10^{-11}$.}
 \column{0.60\textwidth}
 \vspace{0.1em}
 \footnotesize
-The same chain animated through all 80 iterations.
+The same winning chain animated through all 80 iterations.
 
 \vspace{0.4em}
-\textbf{What to watch for.} In the first $\sim 5$ iterations the image
-is still essentially noise. Around iteration 10 to 15 the
-\textbf{data step} (Gauss-Newton) has accumulated enough information
-about the voltages that the iterate starts to look like a coherent
-shape. The class label $c = 5$ (via CFG) keeps the prior step pulling
-toward a 5, so the chain commits to the right digit early. By
-iteration 20 the digit class is locked in. From there on, the prior
-step polishes the strokes and the data step nudges the pixels for a
-tighter fit. The TV polish (a separate stage, not shown here) takes
-the final image from misfit $\sim 10^{-6}$ to $\sim 10^{-11}$.
+\textbf{What to watch for.} In the first $\sim 3$ iterations the image
+is mostly noise but a 5-ish shape is already forming. Around iteration
+5 to 10 the \textbf{data step} (Gauss-Newton) plus the class label
+$c = 5$ (via CFG) lock in a clean 5. From iteration 10 onward, the
+strokes sharpen and the pre-polish misfit drops smoothly from $\sim
+10^{-5}$ to $\sim 10^{-6}$. The TV polish (a separate stage, not shown
+here) then takes the final image from misfit $\sim 10^{-6}$ to
+$\sim 10^{-11}$.
 
 \vspace{0.4em}
 \textcolor{osuorange}{The digit identity is decided early. The rest is refinement.}
