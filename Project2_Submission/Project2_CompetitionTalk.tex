@@ -480,40 +480,15 @@ is the safety net. The lowest-misfit chain wins.}
 
 %==============================================================
 \begin{frame}{The 12-combination sweep}
-\begin{columns}[T]
-\column{0.42\textwidth}
-\scriptsize
-We tested all $3 \times 2 \times 2 = 12$ combinations:
-
-\vspace{0.3em}
-\begin{itemize}\itemsep=1pt
-\item \textbf{Prior:} base / bigger+EMA / class-conditional+CFG
-\item \textbf{Schedule:} geomspace / DAPS++ negative-rho
-\item \textbf{Polish:} Newton / TV-regularized
-\end{itemize}
-
-\vspace{0.4em}
-Two things popped out.
+\centering
+\includegraphics[height=0.72\textheight]{fig14_sweep_grid.png}
 
 \vspace{0.2em}
-\begin{itemize}\itemsep=1pt
-\item \textbf{TV polish beat Newton polish in every prior-schedule pair.}
-  Uniformly lower misfit \emph{and} cleaner image.
-\item \textbf{The class-conditional prior plus the geomspace schedule
-  plus the TV polish was the lowest misfit overall.} $1.83 \times
-  10^{-11}$, with a clean recognizable 5.
-\end{itemize}
-
-\vspace{0.3em}
-The bottom-right two cells (class-cond + neg-rho) actually converged
-to a class-6-shaped image --- the schedule pushed the chain into a
-different mode. Same ambiguity the four early attempts hit, under a
-worse schedule.
-
-\column{0.58\textwidth}
-\centering
-\includegraphics[width=\linewidth]{fig14_sweep_grid.png}
-\end{columns}
+{\scriptsize
+\textbf{Axes:} prior $\times$ schedule $\times$ polish. \textbf{Findings:}
+TV polish beats Newton in every cell; class-conditional + geomspace
++ TV is the winner at $1.83\!\times\!10^{-11}$. The two cond+neg-rho
+cells converged to class-6 --- worse schedule pushed a different mode.}
 \end{frame}
 
 %==============================================================
@@ -583,14 +558,13 @@ as $2$), not by lowest misfit.}
 %==============================================================
 \begin{frame}{Both results, side by side}
 \centering
-\includegraphics[width=0.78\linewidth]{fig_v2_vs_v1.png}
+\includegraphics[width=0.72\linewidth]{fig_v2_vs_v1.png}
 
-\vspace{0.3em}
+\vspace{0.2em}
 {\footnotesize
-Same pipeline, two vectors, two regimes. Left: noiseless digit-5
-test vector polished to misfit $1.83 \times 10^{-11}$ (float64
-floor). Right: Competition 2 actual vector, digit \textbf{2} at
-pre-polish misfit $9.67 \times 10^{-4}$ (measurement-noise floor).
+Same pipeline, two regimes. Left: noiseless digit-5 polished to
+$1.83\!\times\!10^{-11}$ (float64 floor). Right: Competition 2,
+digit \textbf{2} at $9.67\!\times\!10^{-4}$ (noise floor).
 The misfit floor reflects the noise in the data, not the method.}
 \end{frame}
 
@@ -639,41 +613,29 @@ diffusion prior and the Gauss-Newton data step do all the work.}
 \begin{frame}{Summary}
 \footnotesize
 \begin{itemize}\itemsep=4pt
-\item Five standard diffusion-based recipes failed in two distinct
-  ways. DPS, DAPS, classifier-vote, and template retrieval all
-  committed to the wrong digit because their data step is too weak.
-  Base PnP-DM + Newton polish picked the right digit but produced a
-  speckled picture from over-fitting round-off noise.
-\item Our method is three pieces working together:
-  \textbf{(1) variable splitting + Gauss-Newton}, which gives the
-  data step real teeth and pushes the chain out of wrong-digit basins;
-  \textbf{(2) class-conditional prior with classifier-free guidance},
-  which lets us run 32 chains seeded to 10 different class hypotheses
-  instead of relying on the data step to roll each chain into a valley;
-  \textbf{(3) TV-regularized polish}, which tightens the data fit
-  without amplifying per-pixel round-off as speckle.
-\item We validated by sweeping all $3 \times 2 \times 2 = 12$
-  combinations of prior, schedule, and polish on a noiseless digit-5
-  test vector. Class-conditional + geomspace + TV polish was the
-  lowest-misfit combination AND had the cleanest image; we used that
-  combination as the final pipeline.
-\item \textbf{Worked-example result:} digit \textbf{5}, polished misfit
+\item Five standard recipes failed in two ways. DPS, DAPS,
+  classifier-vote, and template retrieval committed to the wrong digit
+  (weak data step). Base PnP-DM + Newton polish picked the right digit
+  but over-fit round-off noise into speckle.
+\item Our method has three pieces: \textbf{(1) variable splitting +
+  Gauss-Newton} (real teeth in the data step); \textbf{(2)
+  class-conditional prior with CFG} (32 chains seeded to 10 class
+  hypotheses); \textbf{(3) TV-regularized polish} (tightens fit without
+  amplifying speckle).
+\item Picked via a $3 \times 2 \times 2 = 12$ sweep on a digit-5
+  test vector: class-conditional + geomspace + TV was the lowest
+  misfit AND cleanest image.
+\item \textbf{Worked example:} digit \textbf{5}, polished misfit
   \textcolor{osuorange}{$\mathbf{1.83 \times 10^{-11}}$}
-  (about $5{,}400 \times$ tighter than Project 1's
-  rotation-aware result), with clean strokes and a flat background.
-\item \textbf{Actual Competition 2 result:} digit \textbf{2},
-  pre-polish misfit
+  ($\sim 5{,}400\times$ tighter than Project 1).
+\item \textbf{Competition 2:} digit \textbf{2}, pre-polish misfit
   \textcolor{osuorange}{$\mathbf{9.67 \times 10^{-4}}$}, classifier
-  confidence $1.00$. The Competition 2 vector has measurement noise
-  with a floor near $10^{-3}$; polishing below that floor fits noise,
-  so the pre-polish image is the answer. Chain selected by classifier
-  confidence on the majority vote, not by lowest misfit.
-\item Held-out: \textbf{8/10} on the new pipeline, \textbf{9/10} on the
-  base pipeline; the two misses on the new pipeline are physics
-  ambiguity, not pipeline failure.
+  confidence $1.00$. Noise floor near $10^{-3}$; polish would overshoot.
+\item \textbf{Held-out:} 8/10 new pipeline, 9/10 base pipeline; misses
+  are physics ambiguity, not pipeline failure.
 \end{itemize}
 
-\vspace{0.4em}
+\vspace{0.3em}
 \begin{center}
 {\large\textcolor{osuorange}{\textbf{Thank you. Questions?}}}
 \end{center}
