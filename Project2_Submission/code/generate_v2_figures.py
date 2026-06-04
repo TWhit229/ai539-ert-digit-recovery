@@ -103,28 +103,30 @@ PRIOR_LBL = {"base": "base prior\n(1M params)",
 SCHEDS    = ["geomspace", "neg_rho"]
 POLISHES  = ["lm", "tv"]
 
-fig, axes = plt.subplots(3, 4, figsize=(11, 10))
-fig.subplots_adjust(top=0.88)
+fig, axes = plt.subplots(3, 4, figsize=(11, 11))
+fig.subplots_adjust(hspace=0.55, top=0.90)
 for i, prior in enumerate(PRIORS):
     for j, (s, pol) in enumerate([(s, p) for s in SCHEDS for p in POLISHES]):
         path = f"{SWEEP}/results/polished/{prior}_{s}_{pol}.mat"
         img, mis = load_mat(path)
         ax = axes[i, j]
         ax.imshow(img, cmap='viridis', vmin=1, vmax=2)
-        # highlight the winner with an orange border
+        ax.set_xticks([]); ax.set_yticks([])
+        # highlight the winner with an orange border (no extra spine work needed
+        # because we keep ticks invisible but spines visible by default)
         if (prior, s, pol) == ("cond", "geomspace", "tv"):
             for spine in ax.spines.values():
                 spine.set_visible(True)
                 spine.set_edgecolor('#D73F09')
                 spine.set_linewidth(3)
-            ax.set_xticks([]); ax.set_yticks([])
-            ax.set_title('WINNER\nmisfit ' + mathsci(mis), fontsize=9,
-                          color='#D73F09', fontweight='bold')
+            ax.set_title('WINNER  ' + 'misfit ' + mathsci(mis), fontsize=9,
+                          color='#D73F09', fontweight='bold', pad=4)
         else:
-            ax.axis('off')
-            ax.set_title('misfit ' + mathsci(mis), fontsize=9)
+            for spine in ax.spines.values():
+                spine.set_visible(False)
+            ax.set_title('misfit ' + mathsci(mis), fontsize=9, pad=4)
         if i == 0:
-            ax.text(0.5, 1.25, f'schedule = {s}\npolish = {pol}',
+            ax.text(0.5, 1.35, f'schedule = {s}\npolish = {pol}',
                      ha='center', va='bottom', transform=ax.transAxes,
                      fontsize=9, fontweight='bold')
     axes[i, 0].text(-0.18, 0.5, PRIOR_LBL[prior], ha='center', va='center',
@@ -132,7 +134,7 @@ for i, prior in enumerate(PRIORS):
                      fontweight='bold', rotation=90)
 plt.suptitle('12-combination sweep:  rows = prior,  cols = schedule x polish',
               fontsize=12, fontweight='bold', y=0.995)
-plt.tight_layout(rect=[0, 0, 1, 0.93])
+plt.tight_layout(rect=[0, 0, 1, 0.92])
 out = f"{LES_DIR}/fig14_sweep_grid.png"
 plt.savefig(out, dpi=140, bbox_inches='tight', facecolor='white')
 plt.close()

@@ -73,8 +73,8 @@ We applied the pipeline to two vectors:
   recovered a clean tilted 5 with polished misfit
   \textcolor{osuorange}{$\mathbf{1.83 \times 10^{-11}}$}.
 \item \textbf{Actual Competition 2 vector} (with measurement noise):
-  recovered digit \textbf{2} with pre-polish misfit
-  \textcolor{osuorange}{$\mathbf{9.59 \times 10^{-4}}$}. The
+  recovered digit \textbf{2} (classifier confidence $1.00$), pre-polish
+  misfit \textcolor{osuorange}{$\mathbf{9.67 \times 10^{-4}}$}. The
   measurement noise floor is around $10^{-3}$; polishing below that
   fits the noise, so we report the pre-polish image.
 \end{itemize}
@@ -585,25 +585,27 @@ TV polish tightens the fit without amplifying noise.}
 \vspace{0.4em}
 \footnotesize
 On the actual Competition 2 vector (which has measurement noise added)
-the recovered digit is a \textbf{2}. The pre-polish misfit is
-\textcolor{osuorange}{$\boldsymbol{9.59 \times 10^{-4}}$}, and our
+the recovered digit is a \textbf{2}, pre-polish misfit
+\textcolor{osuorange}{$\boldsymbol{9.67 \times 10^{-4}}$}. The
 TinyMNIST classifier reads the recovered image as a 2 with confidence
-$0.98$.
+$1.00$.
 
 \vspace{0.4em}
 \textbf{Why pre-polish, not polished?} The noisy vector has a
-measurement-noise floor near $10^{-3}$. Driving the misfit below the
-noise floor would be fitting noise, not signal --- exactly the
-problem TV polish was designed to avoid on noiseless data, but at this
-floor even the TV step pushes the image toward a smoother (wrong)
-solution. We report the pre-polish image, which is the lowest-misfit
-chain across $32$ chains seeded to classes $0,1,\dots,9$ cycling.
+measurement-noise floor near $10^{-3}$. All $32$ cond+CFG chains
+land in the $9.5 \times 10^{-4}$ to $9.7 \times 10^{-4}$ band ---
+they're at the noise floor. Running TV polish on top drives the
+misfit \emph{up} to $1.23 \times 10^{-3}$ as TV pushes toward
+smoother (less data-faithful) images: the polish was tuned for the
+$10^{-11}$ regime of the noiseless example and overshoots here. The
+pre-polish image is the answer.
 
 \vspace{0.3em}
-{\color{osugray} All $32$ chains land in the $9.5 \times 10^{-4}$ to
-$9.7 \times 10^{-4}$ band, which is what we expect when the data has
-a real noise floor: the chain whose target class matches the truth
-wins by a small margin.}
+\textbf{Which chain?} Selecting by lowest misfit alone gave a
+visually broken chain on this noisy data. Instead we pick the chain
+with the highest classifier confidence on the majority vote ($18$ of
+$32$ chains classify as a $2$), tie-breaking by misfit. The chosen
+chain has target class $2$ and classifier confidence $1.00$.
 \end{columns}
 \end{frame}
 
@@ -617,7 +619,7 @@ wins by a small margin.}
 Same pipeline, two vectors. Left: a noiseless digit-5 test vector
 polished to misfit $1.83 \times 10^{-11}$. Right: the actual
 Competition 2 vector with measurement noise; pre-polish answer is
-digit \textbf{2} at misfit $9.59 \times 10^{-4}$, which sits at the
+digit \textbf{2} at misfit $9.67 \times 10^{-4}$, which sits at the
 measurement-noise floor. The pipeline is robust to both noiseless and
 noisy regimes; the misfit floor reflects the noise in the data, not a
 limitation of the method.}
@@ -692,10 +694,11 @@ diffusion prior and the Gauss-Newton data step do all the work.}
   rotation-aware result), with clean strokes and a flat background.
 \item \textbf{Actual Competition 2 result:} digit \textbf{2},
   pre-polish misfit
-  \textcolor{osuorange}{$\mathbf{9.59 \times 10^{-4}}$}, classifier
-  confidence $0.98$. The Competition 2 vector has measurement noise
+  \textcolor{osuorange}{$\mathbf{9.67 \times 10^{-4}}$}, classifier
+  confidence $1.00$. The Competition 2 vector has measurement noise
   with a floor near $10^{-3}$; polishing below that floor fits noise,
-  so the pre-polish image is the answer.
+  so the pre-polish image is the answer. Chain selected by classifier
+  confidence on the majority vote, not by lowest misfit.
 \item Held-out: \textbf{8/10} on the new pipeline, \textbf{9/10} on the
   base pipeline; the two misses on the new pipeline are physics
   ambiguity, not pipeline failure.

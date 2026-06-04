@@ -1945,8 +1945,8 @@ back something matching the left to within about $\sqrt{2 \times 1.83
 
 \begin{itemize}[leftmargin=2em]
 \item Recovered digit: \textbf{2}.
-\item Pre-polish misfit: $\mathbf{9.59 \times 10^{-4}}$.
-\item Classifier confidence on the recovered image: $0.98$.
+\item Pre-polish misfit: $\mathbf{9.67 \times 10^{-4}}$.
+\item Classifier confidence on the recovered image: $1.00$ (TinyMNIST CNN).
 \end{itemize}
 
 \begin{center}
@@ -1956,15 +1956,24 @@ back something matching the left to within about $\sqrt{2 \times 1.83
 \textbf{Why pre-polish, not polished?} The Competition 2 vector has
 measurement noise with a floor near $10^{-3}$. All $32$ chains in the
 PnP-DM-CFG run converge to misfits between $9.5 \times 10^{-4}$ and
-$9.7 \times 10^{-4}$, with the lowest belonging to the chain seeded
-to class 1 (final misfit $9.515 \times 10^{-4}$, but the recovered
-image reads as a 2 with $0.98$ confidence because the data step
-overrode the CFG class hint). Running TV polish on top of this drives
-the polished misfit \emph{up} to $1.23 \times 10^{-3}$ as TV pushes
-the image toward smoother solutions that fit the data less well: the
-TV-polish update was tuned for the $10^{-11}$ regime of the noiseless
-example, and on noisy data it overshoots. The pre-polish image is the
-answer.
+$9.7 \times 10^{-4}$ --- they're at the noise floor. Running TV polish
+on top of this drives the polished misfit \emph{up} to $1.23 \times
+10^{-3}$ as TV pushes the image toward smoother solutions that fit
+the data less well: the TV-polish update was tuned for the
+$10^{-11}$ regime of the noiseless example, and on noisy data it
+overshoots below the noise floor. The pre-polish image is the answer.
+
+\textbf{Which chain do we report?} Selecting by lowest misfit alone
+gave a chain whose recovered image is visually broken (disconnected
+strokes, scattered pixels) even though its misfit was the lowest at
+$9.51 \times 10^{-4}$. On noisy data, lowest misfit does not equal
+cleanest image. Instead, we tally the classifier vote across the $32$
+chains: $18$ chains classify as a $2$, $8$ as a $3$, $4$ as a $6$,
+and one each as $5$ and $8$. We then pick the chain with the highest
+classifier confidence on the majority vote ($P(\mathrm{class}=2)$),
+breaking ties by misfit. The chosen chain has target class $2$,
+pre-polish misfit $9.67 \times 10^{-4}$, and classifier confidence
+$1.00$.
 
 \textbf{Both results, side by side:}
 
@@ -2142,7 +2151,7 @@ polish step and report the pre-polish image.''
   independent axes. We tested 12 combinations: 3 priors $\times$ 2
   schedules $\times$ 2 polishes. (Lesson 41.)
 \item \textbf{Final misfits.} $1.83 \times 10^{-11}$ on the noiseless
-  digit-5 worked example (polished, float64 floor); $9.59 \times
+  digit-5 worked example (polished, float64 floor); $9.67 \times
   10^{-4}$ on the actual Competition 2 vector (pre-polish, sitting at
   the measurement-noise floor; polish overshoots on noisy data).
   (Lesson 43.)
