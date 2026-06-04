@@ -550,79 +550,48 @@ remove both the speckle and the stroke darkness simultaneously.}
 
 %==============================================================
 \begin{frame}{What we recovered: worked example (digit 5)}
-\begin{columns}[T]
-\column{0.55\textwidth}
 \centering
-\includegraphics[width=\linewidth]{fig12_recovered_sigma.png}
-\column{0.45\textwidth}
-\vspace{0.8em}
-\footnotesize
+\includegraphics[width=0.92\linewidth]{fig12_recovered_sigma.png}
+
+\vspace{0.4em}
+{\footnotesize
 On a noiseless test vector the recovered digit is a \textbf{5},
-tilted by about $7.5$ degrees, with smooth strokes and a clean
-background. The polished misfit is
-\textcolor{osuorange}{$\boldsymbol{1.83 \times 10^{-11}}$}.
-
-\vspace{0.5em}
-That is roughly $\mathbf{5{,}400}$ times tighter than Project 1's
-rotation-aware result on the same data, recovered without a template
-database, without a classifier vote, and without any prior knowledge
-of the digit class.
-
-\vspace{0.5em}
-{\color{osugray} The diffusion does the heavy lifting: it puts the
-chain into the right digit basin via class conditioning, and the
-TV polish tightens the fit without amplifying noise.}
-\end{columns}
+tilted by about $7.5$ degrees. Polished misfit
+\textcolor{osuorange}{$\mathbf{1.83 \times 10^{-11}}$}, roughly
+$5{,}400 \times$ tighter than Project 1's rotation-aware result on
+the same data, recovered without a template database, without a
+classifier vote, and without any prior knowledge of the digit class.}
 \end{frame}
 
 %==============================================================
 \begin{frame}{What we recovered: the actual Competition 2 vector}
-\begin{columns}[T]
-\column{0.55\textwidth}
 \centering
-\includegraphics[width=\linewidth]{fig_v2_recovered.png}
-\column{0.45\textwidth}
-\vspace{0.4em}
-\footnotesize
-On the actual Competition 2 vector (which has measurement noise added)
-the recovered digit is a \textbf{2}, pre-polish misfit
-\textcolor{osuorange}{$\boldsymbol{9.67 \times 10^{-4}}$}. The
-TinyMNIST classifier reads the recovered image as a 2 with confidence
-$1.00$.
-
-\vspace{0.4em}
-\textbf{Why pre-polish, not polished?} The noisy vector has a
-measurement-noise floor near $10^{-3}$. All $32$ cond+CFG chains
-land in the $9.5 \times 10^{-4}$ to $9.7 \times 10^{-4}$ band ---
-they're at the noise floor. Running TV polish on top drives the
-misfit \emph{up} to $1.23 \times 10^{-3}$ as TV pushes toward
-smoother (less data-faithful) images: the polish was tuned for the
-$10^{-11}$ regime of the noiseless example and overshoots here. The
-pre-polish image is the answer.
+\includegraphics[width=0.92\linewidth]{fig_v2_recovered.png}
 
 \vspace{0.3em}
-\textbf{Which chain?} Selecting by lowest misfit alone gave a
-visually broken chain on this noisy data. Instead we pick the chain
-with the highest classifier confidence on the majority vote ($18$ of
-$32$ chains classify as a $2$), tie-breaking by misfit. The chosen
-chain has target class $2$ and classifier confidence $1.00$.
-\end{columns}
+{\scriptsize
+Recovered digit \textbf{2}, classifier confidence $1.00$, pre-polish
+misfit \textcolor{osuorange}{$\mathbf{9.67 \times 10^{-4}}$}. The
+noisy vector has a measurement-noise floor near $10^{-3}$; all $32$
+cond+CFG chains land in the $9.5 \times 10^{-4}$ to $9.7 \times
+10^{-4}$ band. TV polish overshoots here ($\uparrow$ to $1.23 \times
+10^{-3}$), so the pre-polish image is the answer. Chain selected by
+classifier confidence on the majority vote ($18 / 32$ chains read
+as $2$), not by lowest misfit.}
 \end{frame}
 
 %==============================================================
 \begin{frame}{Both results, side by side}
 \centering
-\includegraphics[width=0.85\linewidth]{fig_v2_vs_v1.png}
+\includegraphics[width=0.78\linewidth]{fig_v2_vs_v1.png}
 
-\vspace{0.4em}
+\vspace{0.3em}
 {\footnotesize
-Same pipeline, two vectors. Left: a noiseless digit-5 test vector
-polished to misfit $1.83 \times 10^{-11}$. Right: the actual
-Competition 2 vector with measurement noise; pre-polish answer is
-digit \textbf{2} at misfit $9.67 \times 10^{-4}$, which sits at the
-measurement-noise floor. The pipeline is robust to both noiseless and
-noisy regimes; the misfit floor reflects the noise in the data, not a
-limitation of the method.}
+Same pipeline, two vectors, two regimes. Left: noiseless digit-5
+test vector polished to misfit $1.83 \times 10^{-11}$ (float64
+floor). Right: Competition 2 actual vector, digit \textbf{2} at
+pre-polish misfit $9.67 \times 10^{-4}$ (measurement-noise floor).
+The misfit floor reflects the noise in the data, not the method.}
 \end{frame}
 
 %==============================================================
