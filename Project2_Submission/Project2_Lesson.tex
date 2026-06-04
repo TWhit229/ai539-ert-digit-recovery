@@ -1915,13 +1915,18 @@ Alternates Gauss-Newton steps on the data term with gradient steps on
 the smoothed-TV term until misfit is in the $10^{-11}$ regime, without
 adding speckle.
 
-\section{Lesson 43: The result on the competition vector}
+\section{Lesson 43: The result on the competition vectors}
 
-Running this on the professor's competition vector:
+We applied the pipeline to two vectors. The first is a noiseless
+digit-5 test vector we used while building the method (and the one
+the 12-combination sweep in Lesson 41 was run on). The second is the
+actual Competition 2 vector, which has measurement noise added.
+
+\textbf{Vector 1 (worked example, noiseless digit-5):}
 
 \begin{itemize}[leftmargin=2em]
 \item Recovered digit: \textbf{5}, rotated by about $7.5^\circ$.
-\item Final misfit: $\mathbf{1.83 \times 10^{-11}}$.
+\item Polished misfit: $\mathbf{1.83 \times 10^{-11}}$.
 \item About $5{,}400 \times$ tighter than Project 1's rotation-aware
   result on the same data.
 \end{itemize}
@@ -1930,12 +1935,46 @@ Running this on the professor's competition vector:
 \includegraphics[width=0.99\textwidth]{fig12_recovered_sigma.png}
 \end{center}
 
-Left: the input we were handed, a list of $1900$ voltage readings.
-Right: the recovered conductivity image, with the digit 5 clearly
-visible, smooth strokes, and a flat background. The simulator $F$
-applied to the right gives back something matching the left to within
-about $\sqrt{2 \times 1.83 \times 10^{-11}} \approx 6 \times 10^{-6}$
-per measurement.
+Left: the input list of $1900$ voltage readings. Right: the recovered
+conductivity image, with the digit 5 clearly visible, smooth strokes,
+and a flat background. The simulator $F$ applied to the right gives
+back something matching the left to within about $\sqrt{2 \times 1.83
+\times 10^{-11}} \approx 6 \times 10^{-6}$ per measurement.
+
+\textbf{Vector 2 (actual Competition 2, with measurement noise):}
+
+\begin{itemize}[leftmargin=2em]
+\item Recovered digit: \textbf{2}.
+\item Pre-polish misfit: $\mathbf{9.59 \times 10^{-4}}$.
+\item Classifier confidence on the recovered image: $0.98$.
+\end{itemize}
+
+\begin{center}
+\includegraphics[width=0.99\textwidth]{fig_v2_recovered.png}
+\end{center}
+
+\textbf{Why pre-polish, not polished?} The Competition 2 vector has
+measurement noise with a floor near $10^{-3}$. All $32$ chains in the
+PnP-DM-CFG run converge to misfits between $9.5 \times 10^{-4}$ and
+$9.7 \times 10^{-4}$, with the lowest belonging to the chain seeded
+to class 1 (final misfit $9.515 \times 10^{-4}$, but the recovered
+image reads as a 2 with $0.98$ confidence because the data step
+overrode the CFG class hint). Running TV polish on top of this drives
+the polished misfit \emph{up} to $1.23 \times 10^{-3}$ as TV pushes
+the image toward smoother solutions that fit the data less well: the
+TV-polish update was tuned for the $10^{-11}$ regime of the noiseless
+example, and on noisy data it overshoots. The pre-polish image is the
+answer.
+
+\textbf{Both results, side by side:}
+
+\begin{center}
+\includegraphics[width=0.9\textwidth]{fig_v2_vs_v1.png}
+\end{center}
+
+Same pipeline, two vectors, two regimes. The left answer is bounded
+by float64 precision; the right answer is bounded by measurement
+noise. The pipeline correctly identifies both digits.
 
 \section{Lesson 44: Held-out validation}
 
@@ -2009,9 +2048,12 @@ like a digit of the requested class. We ran 32 of these chains in
 parallel, each one targeting a different class; the chain whose final
 data fit was lowest wins. Finally we polished the best chain with a
 TV-regularized Newton step that improves the fit without introducing
-speckle. The whole pipeline takes about 13 minutes after a one-time
-training, and the final misfit was about $2 \times 10^{-11}$, with a
-clean, recognizable 5.''
+speckle. We applied it to two vectors: a noiseless digit-5 test case
+where the polish drove the misfit down to about $2 \times 10^{-11}$
+with a clean, recognizable 5; and the actual Competition 2 vector,
+which has measurement noise --- there the pipeline recovers a 2 at
+misfit about $10^{-3}$ (the measurement-noise floor), so we skip the
+polish step and report the pre-polish image.''
 \end{intuition}
 
 \section{Lesson 46: Glossary}
@@ -2099,8 +2141,11 @@ clean, recognizable 5.''
 \item \textbf{Sweep.} A systematic test of all combinations along
   independent axes. We tested 12 combinations: 3 priors $\times$ 2
   schedules $\times$ 2 polishes. (Lesson 41.)
-\item \textbf{Final misfit.} $1.83 \times 10^{-11}$ on the competition
-  vector. (Lesson 43.)
+\item \textbf{Final misfits.} $1.83 \times 10^{-11}$ on the noiseless
+  digit-5 worked example (polished, float64 floor); $9.59 \times
+  10^{-4}$ on the actual Competition 2 vector (pre-polish, sitting at
+  the measurement-noise floor; polish overshoots on noisy data).
+  (Lesson 43.)
 \end{itemize}
 
 \bigskip
